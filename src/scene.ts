@@ -35,13 +35,13 @@ function buildingAssetUrl(key: BuildingSpriteKey): string {
   const name = parts[1]!;
   const variant = parts[2]!;
   const dir = encodeURIComponent(`Step ${variant}`);
-  return `/sci-fi-acdrnx/sci-fi/buildings/${dir}/${name}.png`;
+  return `/isotop-assets/sci-fi/buildings/${dir}/${name}.png`;
 }
 
 function npcAssetUrl(key: NpcSpriteKey): string {
   const variant = key.split("/")[2]!;
   const dir = encodeURIComponent(`step ${variant}`);
-  return `/sci-fi-acdrnx/sci-fi/units/Mech/${dir}/Idle/idlesued.png`;
+  return `/isotop-assets/sci-fi/units/Mech/${dir}/Idle/idlesued.png`;
 }
 
 export class CityScene extends Phaser.Scene {
