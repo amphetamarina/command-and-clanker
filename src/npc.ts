@@ -20,16 +20,34 @@ const ADJACENT_OFFSETS: ReadonlyArray<{ x: number; y: number }> = [
   { x: 0, y: -1 },
 ];
 
+export const WANDER_OFFSETS: ReadonlyArray<{ x: number; y: number }> = [
+  { x: 1, y: 0 },
+  { x: 0, y: 1 },
+  { x: -1, y: 0 },
+  { x: 0, y: -1 },
+  { x: 1, y: 1 },
+  { x: 1, y: -1 },
+  { x: -1, y: 1 },
+  { x: -1, y: -1 },
+];
+
+export type NpcSpawn = {
+  screen: ScreenPoint;
+  tile: { x: number; y: number };
+  tileSum: number;
+};
+
 export function npcWorldPosition(
   pid: number,
   building: BuildingDescriptor,
-): { screen: ScreenPoint; tileSum: number } {
+): NpcSpawn {
   const off = ADJACENT_OFFSETS[pid % ADJACENT_OFFSETS.length]!;
   const tx = building.tile.x + off.x;
   const ty = building.tile.y + off.y;
   const s = tileToScreen(tx, ty);
   return {
     screen: { x: s.x, y: s.y + TILE_H / 2 },
+    tile: { x: tx, y: ty },
     tileSum: tx + ty,
   };
 }

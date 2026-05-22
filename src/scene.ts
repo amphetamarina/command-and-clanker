@@ -11,6 +11,7 @@ import { drawGround } from "./ground.ts";
 import { TILE_H, tileToScreen } from "./iso.ts";
 import {
   NPC_VARIANT_KEYS,
+  WANDER_OFFSETS,
   npcSpriteKey,
   npcWorldPosition,
   type NpcSpriteKey,
@@ -21,6 +22,15 @@ const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 4;
 const ZOOM_STEP = 0.15;
 const PROC_POLL_MS = 2000;
+const WANDER_MIN_MS = 1500;
+const WANDER_MAX_MS = 3500;
+const WANDER_STAGGER_MS = 2000;
+
+type NpcState = {
+  sprite: Phaser.GameObjects.Image;
+  building: BuildingDescriptor;
+  currentTile: { x: number; y: number };
+};
 
 type CitySceneData = { buildings: BuildingDescriptor[] };
 
@@ -47,7 +57,7 @@ function npcAssetUrl(key: NpcSpriteKey): string {
 export class CityScene extends Phaser.Scene {
   private buildings: BuildingDescriptor[] = [];
   private buildingByExe = new Map<string, BuildingDescriptor>();
-  private npcSprites = new Map<number, Phaser.GameObjects.Image>();
+  private npcs = new Map<number, NpcState>();
   private tooltip: HTMLDivElement | null = null;
   private dragging = false;
 
@@ -130,7 +140,7 @@ export class CityScene extends Phaser.Scene {
         this.updateNpcs(snap.processes);
         if (snap.processes.length !== lastCount) {
           console.log(
-            `[scene] /procs: ${snap.processes.length} processes, ${this.npcSprites.size} npcs on screen`,
+            `[scene] /procs: ${snap.processes.length} processes, ${this.npcs.size} npcs on screen`,
           );
           lastCount = snap.processes.length;
         }
@@ -150,28 +160,70 @@ export class CityScene extends Phaser.Scene {
     const seen = new Set<number>();
     for (const p of processes) {
       seen.add(p.pid);
-      if (this.npcSprites.has(p.pid)) continue;
+      if (this.npcs.has(p.pid)) continue;
       const building = this.buildingByExe.get(p.exe);
       if (!building) continue;
-      const pos = npcWorldPosition(p.pid, building);
-      const img = this.add.image(
-        pos.screen.x,
-        pos.screen.y,
+      const spawn = npcWorldPosition(p.pid, building);
+      const sprite = this.add.image(
+        spawn.screen.x,
+        spawn.screen.y,
         npcSpriteKey(p.pid),
       );
-      img.setOrigin(0.5, 1);
-      img.setDepth(pos.tileSum + 0.5);
-      img.setInteractive({ pixelPerfect: true });
-      img.on("pointerover", () => this.showProcTooltip(p));
-      img.on("pointerout", () => this.hideTooltip());
-      this.npcSprites.set(p.pid, img);
+      sprite.setOrigin(0.5, 1);
+      sprite.setDepth(spawn.tileSum + 0.5);
+      sprite.setInteractive({ pixelPerfect: true });
+      sprite.on("pointerover", () => this.showProcTooltip(p));
+      sprite.on("pointerout", () => this.hideTooltip());
+      const state: NpcState = {
+        sprite,
+        building,
+        currentTile: spawn.tile,
+      };
+      this.npcs.set(p.pid, state);
+      this.scheduleWander(state);
     }
-    for (const [pid, img] of this.npcSprites) {
+    for (const [pid, state] of this.npcs) {
       if (!seen.has(pid)) {
-        img.destroy();
-        this.npcSprites.delete(pid);
+        state.sprite.destroy();
+        this.npcs.delete(pid);
       }
     }
+  }
+
+  private scheduleWander(state: NpcState) {
+    this.time.delayedCall(Math.random() * WANDER_STAGGER_MS, () =>
+      this.wanderOnce(state),
+    );
+  }
+
+  private wanderOnce(state: NpcState) {
+    if (!state.sprite.active) return;
+    const off =
+      WANDER_OFFSETS[Math.floor(Math.random() * WANDER_OFFSETS.length)]!;
+    const targetTile = {
+      x: state.building.tile.x + off.x,
+      y: state.building.tile.y + off.y,
+    };
+    const targetScreen = tileToScreen(targetTile.x, targetTile.y);
+    const startTile = { x: state.currentTile.x, y: state.currentTile.y };
+    this.tweens.add({
+      targets: state.sprite,
+      x: targetScreen.x,
+      y: targetScreen.y + TILE_H / 2,
+      duration: WANDER_MIN_MS + Math.random() * (WANDER_MAX_MS - WANDER_MIN_MS),
+      ease: "Sine.easeInOut",
+      onUpdate: (tween) => {
+        const p = tween.progress;
+        const cx = startTile.x + (targetTile.x - startTile.x) * p;
+        const cy = startTile.y + (targetTile.y - startTile.y) * p;
+        state.sprite.setDepth(cx + cy + 0.5);
+      },
+      onComplete: () => {
+        state.currentTile = targetTile;
+        state.sprite.setDepth(targetTile.x + targetTile.y + 0.5);
+        this.wanderOnce(state);
+      },
+    });
   }
 
   private createTooltip(): HTMLDivElement {
