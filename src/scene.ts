@@ -1,17 +1,26 @@
 import Phaser from "phaser";
 import type { BuildingDescriptor } from "../shared/types.ts";
+import type { ProcessSnapshot } from "../shared/proc-types.ts";
 import {
   BUILDING_NAMES,
   BUILDING_VARIANTS,
   type BuildingSpriteKey,
 } from "../shared/sprites.ts";
+import { fetchProcs } from "./api.ts";
 import { drawGround } from "./ground.ts";
 import { TILE_H, tileToScreen } from "./iso.ts";
+import {
+  NPC_VARIANT_KEYS,
+  npcSpriteKey,
+  npcWorldPosition,
+  type NpcSpriteKey,
+} from "./npc.ts";
 
 const GROUND_PADDING = 2;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 4;
 const ZOOM_STEP = 0.15;
+const PROC_POLL_MS = 2000;
 
 type CitySceneData = { buildings: BuildingDescriptor[] };
 
@@ -21,7 +30,7 @@ function formatSize(n: number): string {
   return `${(n / 1024 / 1024).toFixed(2)} MB`;
 }
 
-function spriteAssetUrl(key: BuildingSpriteKey): string {
+function buildingAssetUrl(key: BuildingSpriteKey): string {
   const parts = key.split("/");
   const name = parts[1]!;
   const variant = parts[2]!;
@@ -29,8 +38,16 @@ function spriteAssetUrl(key: BuildingSpriteKey): string {
   return `/sci-fi-acdrnx/sci-fi/buildings/${dir}/${name}.png`;
 }
 
+function npcAssetUrl(key: NpcSpriteKey): string {
+  const variant = key.split("/")[2]!;
+  const dir = encodeURIComponent(`step ${variant}`);
+  return `/sci-fi-acdrnx/sci-fi/units/Mech/${dir}/Idle/idlesued.png`;
+}
+
 export class CityScene extends Phaser.Scene {
   private buildings: BuildingDescriptor[] = [];
+  private buildingByExe = new Map<string, BuildingDescriptor>();
+  private npcSprites = new Map<number, Phaser.GameObjects.Image>();
   private tooltip: HTMLDivElement | null = null;
   private dragging = false;
 
@@ -40,14 +57,18 @@ export class CityScene extends Phaser.Scene {
 
   init(data: CitySceneData) {
     this.buildings = data.buildings ?? [];
+    this.buildingByExe = new Map(this.buildings.map((b) => [b.id, b]));
   }
 
   preload() {
     for (const name of BUILDING_NAMES) {
       for (const v of BUILDING_VARIANTS) {
         const key: BuildingSpriteKey = `building/${name}/${v}`;
-        this.load.image(key, spriteAssetUrl(key));
+        this.load.image(key, buildingAssetUrl(key));
       }
+    }
+    for (const key of NPC_VARIANT_KEYS) {
+      this.load.image(key, npcAssetUrl(key));
     }
   }
 
@@ -78,7 +99,7 @@ export class CityScene extends Phaser.Scene {
       img.setOrigin(0.5, 1);
       img.setDepth(d.tile.x + d.tile.y);
       img.setInteractive({ pixelPerfect: true });
-      img.on("pointerover", () => this.showTooltip(d));
+      img.on("pointerover", () => this.showBuildingTooltip(d));
       img.on("pointerout", () => this.hideTooltip());
     }
 
@@ -93,6 +114,59 @@ export class CityScene extends Phaser.Scene {
     this.setupPan();
     this.setupZoom();
     this.setupTooltipFollow();
+    this.startProcPolling();
+  }
+
+  private startProcPolling() {
+    let lastCount = -1;
+    const tick = async () => {
+      try {
+        const snap = await fetchProcs();
+        this.updateNpcs(snap.processes);
+        if (snap.processes.length !== lastCount) {
+          console.log(
+            `[scene] /procs: ${snap.processes.length} processes, ${this.npcSprites.size} npcs on screen`,
+          );
+          lastCount = snap.processes.length;
+        }
+      } catch (err) {
+        console.warn(`[scene] proc poll failed: ${(err as Error).message}`);
+      }
+    };
+    void tick();
+    this.time.addEvent({
+      delay: PROC_POLL_MS,
+      loop: true,
+      callback: tick,
+    });
+  }
+
+  updateNpcs(processes: ProcessSnapshot[]) {
+    const seen = new Set<number>();
+    for (const p of processes) {
+      seen.add(p.pid);
+      if (this.npcSprites.has(p.pid)) continue;
+      const building = this.buildingByExe.get(p.exe);
+      if (!building) continue;
+      const pos = npcWorldPosition(p.pid, building);
+      const img = this.add.image(
+        pos.screen.x,
+        pos.screen.y,
+        npcSpriteKey(p.pid),
+      );
+      img.setOrigin(0.5, 1);
+      img.setDepth(pos.tileSum + 0.5);
+      img.setInteractive({ pixelPerfect: true });
+      img.on("pointerover", () => this.showProcTooltip(p));
+      img.on("pointerout", () => this.hideTooltip());
+      this.npcSprites.set(p.pid, img);
+    }
+    for (const [pid, img] of this.npcSprites) {
+      if (!seen.has(pid)) {
+        img.destroy();
+        this.npcSprites.delete(pid);
+      }
+    }
   }
 
   private createTooltip(): HTMLDivElement {
@@ -118,9 +192,15 @@ export class CityScene extends Phaser.Scene {
     return el;
   }
 
-  private showTooltip(d: BuildingDescriptor) {
+  private showBuildingTooltip(d: BuildingDescriptor) {
     if (this.dragging || !this.tooltip) return;
     this.tooltip.textContent = `${d.id}\nhash:  ${d.hashShort}\nsize:  ${formatSize(d.size)}`;
+    this.tooltip.style.display = "block";
+  }
+
+  private showProcTooltip(p: ProcessSnapshot) {
+    if (this.dragging || !this.tooltip) return;
+    this.tooltip.textContent = `pid:  ${p.pid}\ncomm: ${p.comm}\nexe:  ${p.exe}`;
     this.tooltip.style.display = "block";
   }
 
