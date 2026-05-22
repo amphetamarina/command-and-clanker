@@ -14,23 +14,42 @@ district.
 In scope:
 
 - A Bun project with a tiny HTTP server and a Phaser 3 frontend.
-- Enumerate one directory: `/usr/bin`.
-- For each regular file in `/usr/bin`, compute a SHA-256 of its contents
-  and emit a `BuildingDescriptor`.
-- Deterministically lay out those buildings in an isometric district.
+- Enumerate the set of binaries that are *actually running right now*:
+  read `/proc/*/exe`, dedupe by absolute path, hash each one.
+- Snapshot at page load only. No periodic refresh; no live `top`-style
+  update loop in v0.
+- Deterministically lay out the resulting buildings in a single
+  isometric district called `running`.
+- Draw a ground plane (grid of iso diamonds) beneath the buildings so
+  the city has a floor to sit on and the projection reads correctly.
 - Render the district in the browser with pan and zoom.
 - Hovering a building shows: full path, first 8 chars of hash, file size.
 
 Out of scope (do not build these in v0):
 
-- Reading `/proc`. No processes, no NPCs, no robots.
+- NPCs / processes as visible characters. The /proc read is used only
+  to filter *which buildings exist*, not to spawn anything that moves.
+  Buildings are still tools; processes will become NPCs in a later
+  milestone.
+- Live refresh. The map is computed once when the page loads.
 - WebSockets. REST only.
-- Any directory other than `/usr/bin`.
+- Walking `/usr/bin` (or any directory) wholesale. Only paths discovered
+  through `/proc` are scanned.
 - Multiple districts, roads between districts, world map.
 - Sprites or hand-drawn art. Use solid-color isometric prisms generated at
   runtime. The point is to see if the *layout* feels right; art comes after.
 - Persistence / caching of the manifest.
 - Tauri or any desktop packaging.
+
+### Scope shift note
+
+An earlier draft of this spec targeted all of `/usr/bin` as the
+universe. The narrowed universe (currently-running binaries only) is
+deliberate: it makes the city populated by tools the player recognises
+(`bash`, `vim`, `claude`, the shell, the editor) instead of hundreds of
+binaries they have never used, which sharpens the aesthetic gut check
+without leaving the v0 design (buildings are tools, processes are NPCs
+in a later milestone).
 
 ## Stack
 
