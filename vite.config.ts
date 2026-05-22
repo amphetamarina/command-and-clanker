@@ -22,5 +22,6 @@ export default defineConfig({
   build: {
     outDir: resolve(import.meta.dirname, "dist"),
     emptyOutDir: true,
+    target: "es2022",
   },
 });

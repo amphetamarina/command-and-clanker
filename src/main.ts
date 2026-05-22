@@ -1,33 +1,41 @@
 import Phaser from "phaser";
 import { CityScene } from "./scene.ts";
-import type { BuildingDescriptor } from "../shared/types.ts";
+import { fetchWorld } from "./api.ts";
 
-const sampleBuildings: BuildingDescriptor[] = [];
-for (let y = 0; y < 5; y++) {
-  for (let x = 0; x < 5; x++) {
-    const idx = y * 5 + x;
-    sampleBuildings.push({
-      id: `sample/${idx}`,
-      district: "/sample",
-      tile: { x, y },
-      footprint: { w: 1, h: 1 },
-      heightTiers: 1 + ((idx * 7) % 5),
-      paletteIndex: idx % 8,
-      hashShort: idx.toString(16).padStart(8, "0"),
-      size: 1000 + idx,
-    });
-  }
+const app = document.getElementById("app");
+
+function setStatus(text: string, color: string) {
+  if (!app) return;
+  app.innerHTML = "";
+  const p = document.createElement("p");
+  p.textContent = text;
+  p.style.cssText = `color:${color};font-family:monospace;padding:1rem;margin:0`;
+  app.appendChild(p);
 }
 
-const game = new Phaser.Game({
-  type: Phaser.AUTO,
-  parent: "app",
-  backgroundColor: "#0a0a12",
-  scale: {
-    mode: Phaser.Scale.RESIZE,
-    width: window.innerWidth,
-    height: window.innerHeight,
-  },
-});
+setStatus("scanning your /usr/bin ...", "#e0e0f0");
 
-game.scene.add("city", CityScene, true, { buildings: sampleBuildings });
+try {
+  const world = await fetchWorld();
+  if (app) app.innerHTML = "";
+
+  const game = new Phaser.Game({
+    type: Phaser.AUTO,
+    parent: "app",
+    backgroundColor: "#0a0a12",
+    scale: {
+      mode: Phaser.Scale.RESIZE,
+      width: window.innerWidth,
+      height: window.innerHeight,
+    },
+  });
+
+  game.scene.add("city", CityScene, true, { buildings: world.buildings });
+
+  console.log(
+    `[client] rendering ${world.buildings.length} buildings in ${world.district}`,
+  );
+} catch (err) {
+  setStatus(`failed to load /world: ${(err as Error).message}`, "#ff6b6b");
+  throw err;
+}
