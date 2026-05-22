@@ -87,7 +87,12 @@ export class CityScene extends Phaser.Scene {
     );
 
     const ground = this.add.graphics();
-    drawGround(ground, extentX, extentY, GROUND_PADDING);
+    drawGround(
+      ground,
+      Math.ceil(extentX),
+      Math.ceil(extentY),
+      GROUND_PADDING,
+    );
 
     for (const d of sorted) {
       const tilePos = tileToScreen(d.tile.x, d.tile.y);

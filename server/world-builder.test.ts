@@ -27,13 +27,9 @@ test("descriptor ids match manifest paths", () => {
   expect(out.map((d) => d.id)).toEqual(m.map((e) => e.path));
 });
 
-test("tiles are unique and fit in a sparse spaced grid", () => {
+test("tile keys are unique across all buildings", () => {
   const m = sampleManifest(10);
   const out = buildDistrict(m, { district: "/usr/bin" });
-  for (const d of out) {
-    expect(d.tile.x).toBeGreaterThanOrEqual(0);
-    expect(d.tile.y).toBeGreaterThanOrEqual(0);
-  }
   const tileKeys = out.map((d) => `${d.tile.x},${d.tile.y}`);
   expect(new Set(tileKeys).size).toBe(out.length);
 });
@@ -50,6 +46,15 @@ test("buildings have at least one walkable tile between any two of them", () => 
       expect(Math.max(dx, dy)).toBeGreaterThanOrEqual(2);
     }
   }
+});
+
+test("buildings receive sub-tile offsets so the grid does not look perfectly aligned", () => {
+  const m = sampleManifest(20);
+  const out = buildDistrict(m, { district: "/usr/bin" });
+  const someoneOffset = out.some(
+    (d) => d.tile.x !== Math.round(d.tile.x) || d.tile.y !== Math.round(d.tile.y),
+  );
+  expect(someoneOffset).toBe(true);
 });
 
 test("spriteKey is a known building sprite, footprint always 1x1 in v0", () => {
