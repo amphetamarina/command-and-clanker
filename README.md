@@ -15,9 +15,10 @@ bun run dev
 Then open <http://localhost:5173>.
 
 The first page load triggers a scan of `/proc` and a SHA-256 of each
-unique exe found there (a few seconds). After that, the city refreshes
-every 2 seconds; NPCs appear and disappear as processes spawn and
-exit.
+unique exe found there (a few seconds). After that, the page opens a
+WebSocket to the Bun API on port 3001 and live updates stream in:
+NPCs appear and disappear as processes spawn and exit, new buildings
+appear when previously-unseen executables start running.
 
 ## What you see
 
@@ -43,27 +44,28 @@ exit.
 
 ## Status
 
-- **v0** (shipped): static city of buildings keyed by SHA-256, sprite
-  art from the [acdrnx Sci-Fi Strategy](https://opengameart.org/content/sci-fi-strategy-mech-buildings-isometric-asset-pack)
-  CC0 pack.
-- **v1** (shipped): live NPC layer driven by 2s polling of /procs.
+- **v0** (shipped): static city of buildings keyed by SHA-256.
+- **v1** (shipped): live NPC layer.
+- **v1.1** (shipped): custom Tiberian-Sun-style sprite pack
+  (`assets/isotop-assets/`), darker solid ground, organic sub-tile
+  offsets so the layout looks less rigid, NPCs wander between
+  street tiles via Phaser tweens (no walk animation yet), world
+  auto-updates when a new exe starts running, WebSocket push
+  replaces HTTP polling.
 
 ## What isotop deliberately is not yet
 
-- NPCs do not walk. They appear, stand idle, and disappear. Pathing
-  + animation is the next milestone.
-- Live updates are HTTP polling, not WebSocket. Polling was the
-  smaller scope and easier to reason about for v1.
-- Buildings whose process was running at page load are the city.
-  Binaries that only start running later (with no existing process
-  for that exe at startup) will not get a building until the page
-  is reloaded. Re-deriving the world without a full reload is a
-  follow-up.
+- NPCs slide rather than walk. The pack ships walk-cycle frames
+  in 8 directions; v2 will use them.
+- The WebSocket connects directly to the Bun API port (3001) in
+  dev because Vite's WS proxy is unreliable here. In a deployed
+  single-port setup it would proxy normally.
+- No persistence: the placement cache lives in process memory, so
+  restarting the server reshuffles building positions on next
+  page load.
 - The pack's ground tileset is unused; the procedural dark
   diamond floor in `src/ground.ts` pairs better with the cool
   sprite palette than the pack's warmer terrain tiles would.
-- No persistence, no caching, no production deployment story.
-  Local dev only.
 
 See `docs/v0-spec.md` for the original scope statement; `docs/idea.md`
 and `docs/architecture.md` for the broader design.
