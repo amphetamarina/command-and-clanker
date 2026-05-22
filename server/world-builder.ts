@@ -22,14 +22,12 @@ export function buildDistrict(
     const rng = seedrandom(entry.hash);
     const heightTiers = 1 + Math.floor(rng() * HEIGHT_TIERS);
     const paletteIndex = Math.floor(rng() * PALETTE_COUNT);
-    const footprintRoll = rng();
-    const footprint = footprintRoll < 0.15 ? { w: 2, h: 2 } : { w: 1, h: 1 };
 
     return {
       id: entry.path,
       district: options.district,
       tile: { x: index % gridSize, y: Math.floor(index / gridSize) },
-      footprint,
+      footprint: { w: 1, h: 1 },
       heightTiers,
       paletteIndex,
       hashShort: entry.hash.slice(0, 8),

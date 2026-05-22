@@ -41,7 +41,7 @@ test("tiles fill a ceil(sqrt(n))-sized grid", () => {
   expect(new Set(tileKeys).size).toBe(out.length);
 });
 
-test("heightTiers in [1,5], paletteIndex in [0,7], footprint w/h in {1,2}", () => {
+test("heightTiers in [1,5], paletteIndex in [0,7], footprint always 1x1 in v0", () => {
   const m = sampleManifest(50);
   const out = buildDistrict(m, { district: "/usr/bin" });
   for (const d of out) {
@@ -49,8 +49,7 @@ test("heightTiers in [1,5], paletteIndex in [0,7], footprint w/h in {1,2}", () =
     expect(d.heightTiers).toBeLessThanOrEqual(5);
     expect(d.paletteIndex).toBeGreaterThanOrEqual(0);
     expect(d.paletteIndex).toBeLessThanOrEqual(7);
-    expect([1, 2]).toContain(d.footprint.w);
-    expect([1, 2]).toContain(d.footprint.h);
+    expect(d.footprint).toEqual({ w: 1, h: 1 });
   }
 });
 
