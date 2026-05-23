@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { scanPaths } from "./scanner.ts";
+import { scanPaths, type HashCache } from "./scanner.ts";
 import { buildWorld, releaseRegion } from "./world-builder.ts";
 import {
   getRunningBinaryPaths,
@@ -19,6 +19,7 @@ const CACHE_PATH =
   process.env.ISOTOP_CACHE ?? join(process.cwd(), ".isotop-cache.json");
 
 const placements = await loadCache(CACHE_PATH);
+const hashCache: HashCache = new Map();
 const knownExes = new Set<string>();
 const workDirLastActive = new Map<string, number>();
 const sampler = new ProcSampler();
@@ -30,7 +31,7 @@ type WSData =
   | { kind: "term"; id: string; client?: TermClient };
 
 async function buildWorldFor(paths: string[]): Promise<World> {
-  const manifest = await scanPaths(paths);
+  const manifest = await scanPaths(paths, hashCache);
   const world = buildWorld(manifest, placements, [...workDirLastActive.keys()]);
   void saveCache(CACHE_PATH, placements);
   return world;

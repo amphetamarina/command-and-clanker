@@ -1,8 +1,8 @@
 import { test, expect, beforeAll, afterAll } from "bun:test";
-import { mkdir, writeFile, rm, symlink } from "node:fs/promises";
+import { mkdir, writeFile, rm, symlink, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { scanDirectory } from "./scanner.ts";
+import { scanDirectory, hashFile, type HashCache } from "./scanner.ts";
 
 const root = join(tmpdir(), `tty-scanner-test-${process.pid}-${Date.now()}`);
 
@@ -60,4 +60,28 @@ test("manifest is byte-identical across runs", async () => {
   const m1 = await scanDirectory(root);
   const m2 = await scanDirectory(root);
   expect(m1).toEqual(m2);
+});
+
+test("hashFile reuses a cached hash for an unchanged file", async () => {
+  const path = join(root, "a.bin");
+  const info = await stat(path);
+  const cache: HashCache = new Map([
+    [path, { size: info.size, mtimeMs: info.mtimeMs, hash: "SEEDED" }],
+  ]);
+  const entry = await hashFile(path, cache);
+  expect(entry?.hash).toBe("SEEDED");
+});
+
+test("hashFile rehashes and updates the cache when the file changes", async () => {
+  const path = join(root, "cache-test.bin");
+  await writeFile(path, "first");
+  const cache: HashCache = new Map();
+  const first = await hashFile(path, cache);
+  expect(cache.get(path)?.hash).toBe(first!.hash);
+
+  await new Promise((r) => setTimeout(r, 10));
+  await writeFile(path, "second-different-length");
+  const second = await hashFile(path, cache);
+  expect(second!.hash).not.toBe(first!.hash);
+  expect(cache.get(path)?.hash).toBe(second!.hash);
 });
