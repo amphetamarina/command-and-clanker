@@ -1,5 +1,5 @@
-export const TILE_W = 62;
-export const TILE_H = 32;
+export const TILE_W = 124;
+export const TILE_H = 64;
 
 export type ScreenPoint = { x: number; y: number };
 
