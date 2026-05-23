@@ -22,6 +22,19 @@ export async function fetchProcs(): Promise<ProcsResponse> {
   return (await res.json()) as ProcsResponse;
 }
 
+export async function killProcess(pid: number): Promise<boolean> {
+  try {
+    const res = await fetch("/kill", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ pid }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 const DEFAULT_API_PORT = 3001;
 
 export function liveSocketUrl(): string {

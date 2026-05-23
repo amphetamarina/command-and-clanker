@@ -55,6 +55,28 @@ const server = Bun.serve({
       return Response.json({ capturedAt: Date.now(), processes });
     }
 
+    if (url.pathname === "/kill" && req.method === "POST") {
+      let pid: number;
+      try {
+        pid = Number((await req.json()).pid);
+      } catch {
+        return Response.json({ ok: false, error: "bad request" }, { status: 400 });
+      }
+      if (!Number.isInteger(pid) || pid <= 1) {
+        return Response.json({ ok: false, error: "invalid pid" }, { status: 400 });
+      }
+      try {
+        process.kill(pid, "SIGTERM");
+        console.log(`[kill] sent SIGTERM to ${pid}`);
+        return Response.json({ ok: true, pid });
+      } catch (err) {
+        return Response.json(
+          { ok: false, error: (err as Error).message },
+          { status: 400 },
+        );
+      }
+    }
+
     return new Response("not found", { status: 404 });
   },
   websocket: {
