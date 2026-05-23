@@ -6,6 +6,7 @@ import {
   ProcSampler,
 } from "./proc.ts";
 import { FileActivitySampler } from "./activity.ts";
+import { TerminalManager, type TermClient } from "./terminals.ts";
 import type { World } from "../shared/types.ts";
 
 const PORT = Number(process.env.TTY_API_PORT ?? 3001);
@@ -18,20 +19,49 @@ const knownExes = new Set<string>();
 const workDirLastActive = new Map<string, number>();
 const sampler = new ProcSampler();
 const activitySampler = new FileActivitySampler();
+const terminals = new TerminalManager();
+
+type WSData =
+  | { kind: "live" }
+  | { kind: "term"; id: string; client?: TermClient };
 
 async function buildWorldFor(paths: string[]): Promise<World> {
   const manifest = await scanPaths(paths);
   return buildWorld(manifest, placements, [...workDirLastActive.keys()]);
 }
 
-const server = Bun.serve({
+const server = Bun.serve<WSData>({
   port: PORT,
   async fetch(req, srv) {
     const url = new URL(req.url);
 
     if (url.pathname === "/live") {
-      if (srv.upgrade(req)) return undefined;
+      if (srv.upgrade(req, { data: { kind: "live" } })) return undefined;
       return new Response("WS upgrade failed", { status: 400 });
+    }
+
+    if (url.pathname === "/term") {
+      const id = url.searchParams.get("id") ?? "";
+      if (!terminals.get(id)) return new Response("no such term", { status: 404 });
+      if (srv.upgrade(req, { data: { kind: "term", id } })) return undefined;
+      return new Response("WS upgrade failed", { status: 400 });
+    }
+
+    if (url.pathname === "/term/new" && req.method === "POST") {
+      const id = terminals.create();
+      console.log(`[term] created ${id}`);
+      return Response.json({ id });
+    }
+
+    if (url.pathname === "/term/kill" && req.method === "POST") {
+      let id = "";
+      try {
+        id = String((await req.json()).id);
+      } catch {
+        return Response.json({ ok: false }, { status: 400 });
+      }
+      terminals.kill(id);
+      return Response.json({ ok: true });
     }
 
     if (url.pathname === "/health") {
@@ -81,13 +111,34 @@ const server = Bun.serve({
   },
   websocket: {
     open(ws) {
+      if (ws.data.kind === "term") {
+        const term = terminals.get(ws.data.id);
+        if (!term) {
+          ws.close();
+          return;
+        }
+        const client: TermClient = { send: (data) => ws.send(data) };
+        ws.data.client = client;
+        term.attach(client);
+        return;
+      }
       ws.subscribe(TOPIC);
       console.log("[ws] client connected");
     },
-    close() {
+    close(ws) {
+      if (ws.data.kind === "term" && ws.data.client) {
+        terminals.get(ws.data.id)?.detach(ws.data.client);
+        return;
+      }
       console.log("[ws] client disconnected");
     },
-    message() {},
+    message(ws, message) {
+      if (ws.data.kind === "term") {
+        terminals.get(ws.data.id)?.write(
+          typeof message === "string" ? message : message.toString(),
+        );
+      }
+    },
   },
 });
 
