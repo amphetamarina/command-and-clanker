@@ -5,6 +5,7 @@ import {
   getRunningProcesses,
   ProcSampler,
 } from "./proc.ts";
+import { FileActivitySampler } from "./activity.ts";
 import type { World } from "../shared/types.ts";
 
 const PORT = Number(process.env.TTY_API_PORT ?? 3001);
@@ -13,11 +14,13 @@ const TOPIC = "isotop";
 
 const placements = emptyCache();
 const knownExes = new Set<string>();
+const knownWorkDirs = new Set<string>();
 const sampler = new ProcSampler();
+const activitySampler = new FileActivitySampler();
 
 async function buildWorldFor(paths: string[]): Promise<World> {
   const manifest = await scanPaths(paths);
-  return buildWorld(manifest, placements);
+  return buildWorld(manifest, placements, [...knownWorkDirs]);
 }
 
 const server = Bun.serve({
@@ -72,6 +75,9 @@ setInterval(async () => {
   if (server.subscriberCount(TOPIC) === 0) return;
   try {
     const processes = await sampler.sample();
+    const activity = await activitySampler.sample(processes.map((p) => p.pid));
+    for (const p of processes) p.activity = activity.get(p.pid) ?? null;
+
     server.publish(
       TOPIC,
       JSON.stringify({
@@ -80,15 +86,22 @@ setInterval(async () => {
         processes,
       }),
     );
+
     const liveExes = new Set(processes.map((p) => p.exe));
-    const fresh: string[] = [];
+    const freshExes: string[] = [];
     for (const e of liveExes) {
-      if (!knownExes.has(e)) fresh.push(e);
+      if (!knownExes.has(e)) freshExes.push(e);
     }
-    if (fresh.length > 0) {
-      for (const e of fresh) knownExes.add(e);
+    const freshWorkDirs: string[] = [];
+    for (const a of activity.values()) {
+      if (!knownWorkDirs.has(a.dir)) freshWorkDirs.push(a.dir);
+    }
+
+    if (freshExes.length > 0 || freshWorkDirs.length > 0) {
+      for (const e of freshExes) knownExes.add(e);
+      for (const d of freshWorkDirs) knownWorkDirs.add(d);
       const world = await buildWorldFor([...knownExes]);
-      const freshSet = new Set(fresh);
+      const freshSet = new Set(freshExes);
       const newBuildings = world.buildings.filter((b) => freshSet.has(b.id));
       server.publish(
         TOPIC,
@@ -99,7 +112,7 @@ setInterval(async () => {
         }),
       );
       console.log(
-        `[ws] pushed world-delta with ${newBuildings.length} new buildings across ${world.regions.length} regions`,
+        `[ws] world-delta: +${newBuildings.length} buildings, +${freshWorkDirs.length} work dirs, ${world.regions.length} regions total`,
       );
     }
   } catch (err) {

@@ -112,6 +112,7 @@ export async function getRunningProcesses(
       comm: p.comm,
       cpu: 0,
       mem: ram > 0 ? clamp01(p.rssBytes / ram) : 0,
+      activity: null,
     }))
     .sort((a, b) => a.pid - b.pid);
 }
@@ -138,6 +139,7 @@ export class ProcSampler {
         comm: p.comm,
         cpu,
         mem: ram > 0 ? clamp01(p.rssBytes / ram) : 0,
+        activity: null,
       };
     });
 

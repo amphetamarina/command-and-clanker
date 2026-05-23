@@ -1,11 +1,18 @@
 import type { BuildingDescriptor, Region } from "./types.ts";
 
+export type FileActivity = {
+  path: string;
+  dir: string;
+  direction: "read" | "write";
+};
+
 export type ProcessSnapshot = {
   pid: number;
   exe: string;
   comm: string;
   cpu: number;
   mem: number;
+  activity: FileActivity | null;
 };
 
 export type ProcsResponse = {
