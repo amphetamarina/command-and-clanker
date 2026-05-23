@@ -12,13 +12,26 @@ export function wallAssetUrl(index: number): string {
     .padStart(2, "0")}.png`;
 }
 
-// Tuning knobs for the back-edge wall border. The sprites share one base
-// orientation, so one edge is mirrored; flip and vertical anchor can only be
-// judged from a render, so they live here for easy adjustment.
-const TILES_PER_WALL = 2; // a 124px wall spans two 62px tiles
-const FLIP_NE_EDGE = false;
-const FLIP_NW_EDGE = true;
-const BASE_DY = 0;
+// Tuning knobs. The base of a straight sprite contacts the ground near
+// (px 31, py 95) of its 124x96 frame, so the anchor is left-of-centre and at
+// the very bottom. A straight wall's base runs along a constant-x edge
+// unflipped; the other edges mirror it. Flip booleans per edge and corner can
+// only be confirmed from a render, so they live here.
+const ORIGIN_X = 0.25;
+const ORIGIN_Y = 0.98;
+const STEP = 2;
+const DEPTH_BIAS = -0.5;
+
+const FLIP_NW = false; // back-left edge (x = x0)
+const FLIP_NE = true; // back-right edge (y = y0)
+const FLIP_SE = true; // front-right edge (x = x1)
+const FLIP_SW = false; // front-left edge (y = y1)
+
+type Corner = { flipX: boolean; flipY: boolean };
+const CORNER_N: Corner = { flipX: false, flipY: false };
+const CORNER_E: Corner = { flipX: true, flipY: false };
+const CORNER_S: Corner = { flipX: true, flipY: true };
+const CORNER_W: Corner = { flipX: false, flipY: true };
 
 export function placeWalls(
   scene: Phaser.Scene,
@@ -28,37 +41,44 @@ export function placeWalls(
 ): Phaser.GameObjects.Image[] {
   const x0 = -padding;
   const y0 = -padding;
-  const x1 = extentX + padding;
-  const y1 = extentY + padding;
+  const x1 = extentX + padding - 1;
+  const y1 = extentY + padding - 1;
   const walls: Phaser.GameObjects.Image[] = [];
 
   let cycle = 0;
-  const straightKey = () =>
-    `wall/${STRAIGHT_VARIANTS[cycle++ % STRAIGHT_VARIANTS.length]}`;
-
-  const add = (
-    tx: number,
-    ty: number,
-    key: string,
-    flip: boolean,
-    depthBias: number,
-  ) => {
+  const straight = (tx: number, ty: number, flipX: boolean) => {
+    const key = `wall/${STRAIGHT_VARIANTS[cycle++ % STRAIGHT_VARIANTS.length]}`;
     const s = tileToScreen(tx, ty);
-    const img = scene.add
-      .image(s.x, s.y + BASE_DY, key)
-      .setOrigin(0.5, 1)
-      .setFlipX(flip);
-    img.setDepth(tx + ty + depthBias);
-    walls.push(img);
+    walls.push(
+      scene.add
+        .image(s.x, s.y, key)
+        .setOrigin(ORIGIN_X, ORIGIN_Y)
+        .setFlipX(flipX)
+        .setDepth(tx + ty + DEPTH_BIAS),
+    );
   };
 
-  for (let x = x0; x <= x1; x += TILES_PER_WALL) {
-    add(x, y0, straightKey(), FLIP_NE_EDGE, -0.5);
-  }
-  for (let y = y0; y <= y1; y += TILES_PER_WALL) {
-    add(x0, y, straightKey(), FLIP_NW_EDGE, -0.5);
-  }
-  add(x0, y0, `wall/${CORNER_VARIANT}`, false, -1);
+  const corner = (tx: number, ty: number, c: Corner) => {
+    const s = tileToScreen(tx, ty);
+    walls.push(
+      scene.add
+        .image(s.x, s.y, `wall/${CORNER_VARIANT}`)
+        .setOrigin(ORIGIN_X, ORIGIN_Y)
+        .setFlipX(c.flipX)
+        .setFlipY(c.flipY)
+        .setDepth(tx + ty + DEPTH_BIAS),
+    );
+  };
+
+  for (let y = y0; y <= y1; y += STEP) straight(x0, y, FLIP_NW);
+  for (let x = x0; x <= x1; x += STEP) straight(x, y0, FLIP_NE);
+  for (let y = y0; y <= y1; y += STEP) straight(x1, y, FLIP_SE);
+  for (let x = x0; x <= x1; x += STEP) straight(x, y1, FLIP_SW);
+
+  corner(x0, y0, CORNER_N);
+  corner(x1, y0, CORNER_E);
+  corner(x1, y1, CORNER_S);
+  corner(x0, y1, CORNER_W);
 
   return walls;
 }
