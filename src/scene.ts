@@ -8,7 +8,7 @@ import {
 } from "../shared/sprites.ts";
 import { killProcess, liveSocketUrl } from "./api.ts";
 import { Sidebar, type MinimapData } from "./sidebar.ts";
-import { paintGround, FLOOR_COUNT } from "./ground.ts";
+import { buildGroundTiles, FLOOR_COUNT } from "./ground.ts";
 import { TILE_H, tileToScreen } from "./iso.ts";
 import {
   NPC_VARIANT_KEYS,
@@ -126,7 +126,7 @@ export class CityScene extends Phaser.Scene {
   private regionByPath = new Map<string, Region>();
   private buildingByExe = new Map<string, BuildingDescriptor>();
   private npcs = new Map<number, NpcState>();
-  private groundRt: Phaser.GameObjects.RenderTexture | null = null;
+  private floorTiles: Phaser.GameObjects.Image[] = [];
   private regionGraphics: Phaser.GameObjects.Graphics | null = null;
   private regionLabels: Phaser.GameObjects.Text[] = [];
   private tooltip: HTMLDivElement | null = null;
@@ -169,7 +169,6 @@ export class CityScene extends Phaser.Scene {
       (a, b) => a.tile.x + a.tile.y - (b.tile.x + b.tile.y),
     );
 
-    this.groundRt = this.add.renderTexture(0, 0, 16, 16).setDepth(GROUND_DEPTH);
     this.regionGraphics = this.add.graphics().setDepth(REGION_DEPTH);
     this.redrawGround();
     this.renderRegions();
@@ -282,9 +281,16 @@ export class CityScene extends Phaser.Scene {
   }
 
   private redrawGround() {
-    if (!this.groundRt) return;
+    for (const t of this.floorTiles) t.destroy();
     const extent = this.worldExtent();
-    paintGround(this.groundRt, FLOOR_KEYS, extent.x, extent.y, GROUND_PADDING);
+    this.floorTiles = buildGroundTiles(
+      this,
+      FLOOR_KEYS,
+      extent.x,
+      extent.y,
+      GROUND_PADDING,
+      GROUND_DEPTH,
+    );
   }
 
   private renderRegions() {
