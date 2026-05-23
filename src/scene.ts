@@ -4,6 +4,7 @@ import type { LiveMessage, ProcessSnapshot } from "../shared/proc-types.ts";
 import {
   BUILDING_NAMES,
   BUILDING_VARIANTS,
+  TOOL_SPRITE_KEYS,
   type BuildingSpriteKey,
 } from "../shared/sprites.ts";
 import { killProcess, liveSocketUrl } from "./api.ts";
@@ -101,6 +102,9 @@ function labelColor(tint: number): string {
 
 function buildingAssetUrl(key: BuildingSpriteKey): string {
   const parts = key.split("/");
+  if (parts[0] === "tool") {
+    return `/isotop-assets/sci-fi/buildings/tools/${parts[1]}.png`;
+  }
   const name = parts[1]!;
   const variant = parts[2]!;
   const dir = encodeURIComponent(`Step ${variant}`);
@@ -169,6 +173,9 @@ export class CityScene extends Phaser.Scene {
         const key: BuildingSpriteKey = `building/${name}/${v}`;
         this.load.image(key, buildingAssetUrl(key));
       }
+    }
+    for (const key of TOOL_SPRITE_KEYS) {
+      this.load.image(key, buildingAssetUrl(key));
     }
     for (const key of NPC_VARIANT_KEYS) {
       this.load.image(key, npcAssetUrl(key));

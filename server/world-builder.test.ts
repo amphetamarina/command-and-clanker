@@ -148,7 +148,7 @@ test("buildings receive sub-tile offsets so the grid is not perfectly aligned", 
 test("spriteKey is a known building sprite, footprint always 1x1", () => {
   const { buildings } = buildWorld(sampleManifest(50));
   for (const d of buildings) {
-    expect(BUILDING_SPRITE_KEYS).toContain(d.spriteKey);
+    expect(BUILDING_SPRITE_KEYS as readonly string[]).toContain(d.spriteKey);
     expect(d.footprint).toEqual({ w: 1, h: 1 });
   }
 });
@@ -248,6 +248,23 @@ test("a new directory becomes a new region without disturbing existing ones", ()
     const prev = out1ById.get(d.id);
     if (prev) expect(d.tile).toEqual(prev);
   }
+});
+
+test("known programs get their unique tool building sprite", () => {
+  const m: ManifestEntry[] = [
+    { path: "/usr/bin/node", hash: hex(1), size: 1 },
+    { path: "/home/me/.vscode-server/bin/abc123/node", hash: hex(2), size: 1 },
+    { path: "/home/me/.local/share/claude/versions/9/claude", hash: hex(3), size: 1 },
+    { path: "/usr/bin/grep", hash: hex(4), size: 1 },
+  ];
+  const { buildings } = buildWorld(m);
+  const byId = new Map(buildings.map((b) => [b.id, b.spriteKey]));
+  expect(byId.get("/usr/bin/node")).toBe("tool/nodejs");
+  expect(byId.get("/home/me/.vscode-server/bin/abc123/node")).toBe("tool/nodejs");
+  expect(byId.get("/home/me/.local/share/claude/versions/9/claude")).toBe(
+    "tool/claude",
+  );
+  expect(byId.get("/usr/bin/grep")!.startsWith("building/")).toBe(true);
 });
 
 test("work directories become building-less regions of kind 'work'", () => {

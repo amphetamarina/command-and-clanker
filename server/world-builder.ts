@@ -6,7 +6,7 @@ import type {
   Region,
   World,
 } from "../shared/types.ts";
-import { BUILDING_SPRITE_KEYS } from "../shared/sprites.ts";
+import { BUILDING_SPRITE_KEYS, toolFor } from "../shared/sprites.ts";
 
 export const TILE_SPACING = 3;
 export const REGION_GUTTER = 2;
@@ -115,8 +115,10 @@ function buildRegion(
     maxRow = Math.max(maxRow, cell.row);
 
     const rng = seedrandom(entry.hash);
-    const spriteKey =
+    const variantPick =
       BUILDING_SPRITE_KEYS[Math.floor(rng() * BUILDING_SPRITE_KEYS.length)]!;
+    const tool = toolFor(entry.path);
+    const spriteKey = tool ? (`tool/${tool}` as const) : variantPick;
     const offsetX = (rng() * 2 - 1) * MAX_OFFSET;
     const offsetY = (rng() * 2 - 1) * MAX_OFFSET;
 
