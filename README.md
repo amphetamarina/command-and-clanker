@@ -44,9 +44,13 @@ appear when previously-unseen executables start running.
   cardinal-neighbour street tile of its building. Mech colour is a
   deterministic function of the PID. NPCs appear when a process
   spawns and disappear within ~2s of it exiting.
+- **Labels and usage bars.** Each mech carries its process name and
+  two always-on bars: CPU (green/amber/red, full at one saturated
+  core) and memory (blue, full at 20% of total RAM). The bars update
+  every tick from live `/proc` samples.
 - **Hover for details.** Hovering a building shows its full path,
   hash prefix, and size on disk. Hovering an NPC shows its PID,
-  comm name, and exe.
+  comm name, live CPU and memory, and exe.
 
 ## Controls
 
@@ -66,9 +70,11 @@ appear when previously-unseen executables start running.
 - **v1.2** (shipped): buildings are grouped into folder regions on a
   square map. Each directory is a directory-tinted, labelled zone;
   regions and the buildings within them are placed on square grids
-  via a fixed shell slot-mapping, so the layout stays square and
-  existing buildings never move when new ones (or whole new regions)
-  appear.
+  via a shell slot-mapping, with an adaptive grid stride that keeps
+  neighbourhoods packed close together.
+- **v1.3** (shipped): per-process CPU and memory sampled from `/proc`,
+  shown as always-on name labels and RTS-style usage bars above each
+  mech.
 
 ## What isotop deliberately is not yet
 
