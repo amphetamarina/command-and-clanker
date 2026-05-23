@@ -1,11 +1,6 @@
 import { test, expect } from "bun:test";
 import { dirname } from "node:path";
-import {
-  buildWorld,
-  emptyCache,
-  squareCell,
-  REGION_CELL_TILES,
-} from "./world-builder.ts";
+import { buildWorld, emptyCache, squareCell } from "./world-builder.ts";
 import type { ManifestEntry } from "../shared/types.ts";
 import { BUILDING_SPRITE_KEYS } from "../shared/sprites.ts";
 
@@ -76,8 +71,10 @@ test("regions are laid out on a near-square meta-grid", () => {
   const dirs = ["/a", "/b", "/c", "/d", "/e"];
   const m = dirs.flatMap((d) => sampleManifest(1, d));
   const { regions } = buildWorld(m);
-  const cols = regions.map((r) => r.origin.x / REGION_CELL_TILES);
-  const rows = regions.map((r) => r.origin.y / REGION_CELL_TILES);
+  const coords = regions.flatMap((r) => [r.origin.x, r.origin.y]);
+  const stride = Math.min(...coords.filter((c) => c > 0));
+  const cols = regions.map((r) => Math.round(r.origin.x / stride));
+  const rows = regions.map((r) => Math.round(r.origin.y / stride));
   expect(Math.abs(Math.max(...cols) - Math.max(...rows))).toBeLessThanOrEqual(1);
 });
 

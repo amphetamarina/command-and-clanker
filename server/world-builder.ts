@@ -9,9 +9,17 @@ import type {
 import { BUILDING_SPRITE_KEYS } from "../shared/sprites.ts";
 
 export const TILE_SPACING = 3;
-export const REGION_CELL_TILES = 30;
+export const REGION_GUTTER = 2;
 const MAX_OFFSET = 0.5;
 const REGION_PADDING = 1;
+
+function regionSide(count: number): number {
+  return Math.max(1, Math.ceil(Math.sqrt(count)));
+}
+
+function regionFootprint(count: number): number {
+  return regionSide(count) * TILE_SPACING + 2 * REGION_PADDING;
+}
 
 const REGION_TINTS = [
   0x3a5f8a, 0x6a4a7a, 0x4a7a5a, 0x8a6a3a, 0x7a4a4a, 0x4a6a8a, 0x6a6a4a,
@@ -80,10 +88,11 @@ function buildRegion(
   dir: string,
   group: ManifestEntry[],
   cache: PlacementCache,
+  stride: number,
 ): { region: Region; buildings: BuildingDescriptor[] } {
   const regionCell = squareCell(cache.region.get(dir)!);
-  const originX = regionCell.col * REGION_CELL_TILES;
-  const originY = regionCell.row * REGION_CELL_TILES;
+  const originX = regionCell.col * stride;
+  const originY = regionCell.row * stride;
 
   let maxCol = 0;
   let maxRow = 0;
@@ -135,13 +144,18 @@ export function buildWorld(
   );
   const groups = groupByDirectory(sorted);
   const dirs = [...groups.keys()].sort();
+  if (dirs.length === 0) return { buildings: [], regions: [] };
 
   assignSlots(dirs, groups, cache);
+
+  const stride =
+    Math.max(...dirs.map((d) => regionFootprint(groups.get(d)!.length))) +
+    REGION_GUTTER;
 
   const buildings: BuildingDescriptor[] = [];
   const regions: Region[] = [];
   for (const dir of dirs) {
-    const built = buildRegion(dir, groups.get(dir)!, cache);
+    const built = buildRegion(dir, groups.get(dir)!, cache, stride);
     regions.push(built.region);
     buildings.push(...built.buildings);
   }
