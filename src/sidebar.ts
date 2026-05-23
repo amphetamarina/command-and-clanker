@@ -32,6 +32,7 @@ export type SelectionInfo = {
 type SidebarOptions = {
   onNavigate: (worldX: number, worldY: number) => void;
   onKill: (pid: number) => void;
+  onBuildTerminal: () => void;
 };
 
 function hex(n: number): string {
@@ -103,6 +104,29 @@ export class Sidebar {
     this.ctx = this.canvas.getContext("2d")!;
     this.canvas.addEventListener("pointerdown", (e) => this.onMinimapClick(e));
 
+    const buildSection = document.createElement("div");
+    buildSection.style.cssText = "margin-top:12px";
+    const buildLabel = document.createElement("div");
+    buildLabel.textContent = "BUILD";
+    buildLabel.style.cssText =
+      "color:#7a7a95;letter-spacing:2px;font-size:10px;margin-bottom:6px";
+    const termBtn = document.createElement("button");
+    termBtn.textContent = "\u{1F5A5}  Terminal";
+    termBtn.style.cssText = [
+      "width:100%",
+      "padding:8px",
+      "background:#16263a",
+      "color:#7fe0d0",
+      "border:1px solid #2c4a5a",
+      "border-radius:3px",
+      "font-family:inherit",
+      "font-size:12px",
+      "text-align:left",
+      "cursor:pointer",
+    ].join(";");
+    termBtn.addEventListener("click", () => this.opts.onBuildTerminal());
+    buildSection.append(buildLabel, termBtn);
+
     this.empty = document.createElement("div");
     this.empty.textContent = "click a mech to inspect";
     this.empty.style.cssText = "color:#5a5a78;margin-top:14px;text-align:center";
@@ -131,7 +155,7 @@ export class Sidebar {
     this.killBtn.addEventListener("click", () => this.onKillClick());
     this.detail.append(this.commEl, this.fields, this.killBtn);
 
-    root.append(title, this.canvas, this.empty, this.detail);
+    root.append(title, this.canvas, buildSection, this.empty, this.detail);
     document.body.appendChild(root);
   }
 

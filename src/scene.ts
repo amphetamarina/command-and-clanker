@@ -8,6 +8,7 @@ import {
 } from "../shared/sprites.ts";
 import { killProcess, liveSocketUrl } from "./api.ts";
 import { Sidebar, type MinimapData } from "./sidebar.ts";
+import { TerminalsUI } from "./terminals.ts";
 import { paintGround, FLOOR_COUNT } from "./ground.ts";
 import { placeWalls, WALL_KEYS, wallAssetUrl } from "./walls.ts";
 import { TILE_H, tileToScreen } from "./iso.ts";
@@ -139,6 +140,12 @@ export class CityScene extends Phaser.Scene {
   private tooltip: HTMLDivElement | null = null;
   private dragging = false;
   private sidebar: Sidebar | null = null;
+  private terminals: TerminalsUI | null = null;
+  private termBuildings = new Map<
+    string,
+    { sprite: Phaser.GameObjects.Image; label: Phaser.GameObjects.Text }
+  >();
+  private termCount = 0;
   private selectedPid: number | null = null;
   private selectionMarker: Phaser.GameObjects.Ellipse | null = null;
   private minimapStatic: Pick<
@@ -195,9 +202,14 @@ export class CityScene extends Phaser.Scene {
     );
     this.cameras.main.centerOn(0, (maxTileSum * TILE_H) / 4);
 
+    this.terminals = new TerminalsUI({
+      onOpened: (id) => this.addTerminalBuilding(id),
+      onClosed: (id) => this.removeTerminalBuilding(id),
+    });
     this.sidebar = new Sidebar({
       onNavigate: (x, y) => this.cameras.main.centerOn(x, y),
       onKill: (pid) => void killProcess(pid),
+      onBuildTerminal: () => void this.terminals?.spawn(),
     });
     this.rebuildMinimapStatic();
 
@@ -732,6 +744,49 @@ export class CityScene extends Phaser.Scene {
         this.wanderOnce(state);
       },
     });
+  }
+
+  private addTerminalBuilding(id: string) {
+    const i = this.termCount++;
+    const tx = 1 + (i % 5) * 2;
+    const ty = 1 + Math.floor(i / 5) * 2;
+    const pos = tileToScreen(tx, ty);
+    const sprite = this.add
+      .image(pos.x, pos.y + TILE_H, "building/kraftwerk/1")
+      .setOrigin(0.5, 1)
+      .setDepth(tx + ty + 0.2)
+      .setTint(0x6bffd0);
+    sprite.setInteractive({ pixelPerfect: true });
+    sprite.on("pointerover", () =>
+      this.showSimpleTooltip(`terminal ${id} — click to open`),
+    );
+    sprite.on("pointerout", () => this.hideTooltip());
+    sprite.on("pointerup", () => this.terminals?.open(id));
+    const label = this.add
+      .text(pos.x, pos.y + TILE_H - 58, `\u{1F5A5} ${id}`, {
+        fontFamily: "ui-monospace, monospace",
+        fontSize: "11px",
+        color: "#7fe0d0",
+        stroke: "#0a0a12",
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5, 1)
+      .setDepth(LABEL_DEPTH);
+    this.termBuildings.set(id, { sprite, label });
+  }
+
+  private removeTerminalBuilding(id: string) {
+    const t = this.termBuildings.get(id);
+    if (!t) return;
+    t.sprite.destroy();
+    t.label.destroy();
+    this.termBuildings.delete(id);
+  }
+
+  private showSimpleTooltip(text: string) {
+    if (this.dragging || !this.tooltip) return;
+    this.tooltip.textContent = text;
+    this.tooltip.style.display = "block";
   }
 
   private createTooltip(): HTMLDivElement {

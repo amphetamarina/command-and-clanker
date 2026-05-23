@@ -37,9 +37,35 @@ export async function killProcess(pid: number): Promise<boolean> {
 
 const DEFAULT_API_PORT = 3001;
 
-export function liveSocketUrl(): string {
+function apiSocketBase(): string {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const port = location.port === "5173" ? DEFAULT_API_PORT : location.port;
   const host = port ? `${location.hostname}:${port}` : location.hostname;
-  return `${proto}://${host}/live`;
+  return `${proto}://${host}`;
+}
+
+export function liveSocketUrl(): string {
+  return `${apiSocketBase()}/live`;
+}
+
+export function termSocketUrl(id: string): string {
+  return `${apiSocketBase()}/term?id=${encodeURIComponent(id)}`;
+}
+
+export async function createTerminal(): Promise<string | null> {
+  try {
+    const res = await fetch("/term/new", { method: "POST" });
+    if (!res.ok) return null;
+    return ((await res.json()) as { id: string }).id;
+  } catch {
+    return null;
+  }
+}
+
+export function killTerminal(id: string): void {
+  void fetch("/term/kill", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id }),
+  }).catch(() => {});
 }
