@@ -27,10 +27,13 @@ const DEPTH_BIAS = -0.5;
 // ground instead of floating at the tile's top corner.
 const BASE_DY = TILE_H;
 
-const FLIP_NW = false; // back-left edge (x = x0)
-const FLIP_NE = true; // back-right edge (y = y0)
-const FLIP_SE = true; // front-right edge (x = x1)
-const FLIP_SW = false; // front-left edge (y = y1)
+// A straight sprite's base rises to the right, so it fits edges whose uphill
+// run goes right (NW, SE) unflipped, and edges whose uphill run goes left
+// (NE, SW) mirrored.
+const FLIP_NW = false; // back-left edge (x = x0), uphill goes right
+const FLIP_NE = true; // back-right edge (y = y0), uphill goes left
+const FLIP_SE = false; // front-right edge (x = x1), uphill goes right
+const FLIP_SW = true; // front-left edge (y = y1), uphill goes left
 
 type Corner = { flipX: boolean; flipY: boolean };
 const CORNER_N: Corner = { flipX: false, flipY: false };
