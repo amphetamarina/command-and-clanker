@@ -1,8 +1,9 @@
 # isotop
 
 `top`, but isometric. A live, isometric pixel-art rendering of your
-Unix environment: every running binary is a building, every running
-process is a mech NPC standing on the street next to its building.
+Unix environment: every running binary is a building, grouped into a
+neighbourhood for the directory it lives in, and every running process
+is a mech NPC standing on the street next to its building.
 
 ## Quick start
 
@@ -27,8 +28,18 @@ appear when previously-unseen executables start running.
   The silhouette and colour variant are deterministically derived
   from the SHA-256 of the binary's contents, so the same binary on
   the same machine always looks the same.
+- **Regions = directories.** Buildings are grouped by the directory
+  their binary lives in (`/usr/bin`, `/usr/local/bin`,
+  `~/.vscode-server/bin/<hash>`, ...). Each directory is a tinted
+  zone on the ground labelled with its path. The tint is seeded by
+  the directory path, so a folder keeps its colour. Regions are laid
+  out on a square meta-grid and each region's buildings fill a square
+  cluster, so the whole map stays roughly square no matter how many
+  binaries are running. A new zone appears the moment a process from
+  a never-before-seen directory starts.
 - **Streets between buildings.** Tiles are placed on a sparse grid
-  so every building has walkable street tiles around it.
+  so every building has walkable street tiles around it, with wider
+  gutters between regions.
 - **NPCs = processes.** One small mech per PID, standing on a
   cardinal-neighbour street tile of its building. Mech colour is a
   deterministic function of the PID. NPCs appear when a process
@@ -52,6 +63,12 @@ appear when previously-unseen executables start running.
   street tiles via Phaser tweens (no walk animation yet), world
   auto-updates when a new exe starts running, WebSocket push
   replaces HTTP polling.
+- **v1.2** (shipped): buildings are grouped into folder regions on a
+  square map. Each directory is a directory-tinted, labelled zone;
+  regions and the buildings within them are placed on square grids
+  via a fixed shell slot-mapping, so the layout stays square and
+  existing buildings never move when new ones (or whole new regions)
+  appear.
 
 ## What isotop deliberately is not yet
 

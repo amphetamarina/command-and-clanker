@@ -46,8 +46,12 @@ independently (e.g., swap Phaser for Pixi without rewriting the scanner).
   computes a stable content hash per file, returns a structured manifest.
   This is the input to the deterministic world build.
 - **World builder**: takes the manifest plus a seed strategy (see below) and
-  emits a world description: districts, buildings, positions, visual
-  parameters. Pure function of its inputs. No I/O during build.
+  emits a world description: regions, buildings, positions, visual
+  parameters. Pure function of its inputs. No I/O during build. Buildings
+  group by parent directory into regions; regions and the buildings within
+  them are placed on square grids via a fixed shell slot-mapping, so the
+  map stays square and a placement cache keeps positions stable as new
+  binaries and directories appear.
 - **Live watcher**: polls `/proc` on an interval, diffs against last snapshot,
   pushes process and pipe events over a WebSocket.
 - **HTTP/WS surface**: `GET /world` for the static description, `WS /live`
@@ -80,13 +84,25 @@ enforce this once we have CI.
 ```ts
 type BuildingDescriptor = {
   id: string;            // stable, e.g. "/usr/bin/grep"
-  district: string;      // "/usr/bin"
+  district: string;      // parent directory, e.g. "/usr/bin"
   tile: { x: number; y: number };
   footprint: { w: number; h: number };
   heightTiers: number;
   palette: string;       // resolved from hash
   hashShort: string;     // first 8 hex chars, shown on hover
 };
+
+// One per distinct directory. Buildings whose `district` equals
+// `path` belong to this region. `origin`/`size` are tile coordinates;
+// `tint` is seeded by the directory path.
+type Region = {
+  path: string;
+  origin: { x: number; y: number };
+  size: { w: number; h: number };
+  tint: number;
+};
+
+type World = { buildings: BuildingDescriptor[]; regions: Region[] };
 
 type LiveEvent =
   | { kind: "process_spawn"; pid: number; ppid: number; comm: string; cwd: string }
