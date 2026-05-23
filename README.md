@@ -5,6 +5,10 @@ every running binary is a building, grouped into a neighbourhood for the
 directory it lives in, and every process is a mech standing by it — on a
 walled station floating in the desert.
 
+## Screenshots
+<img width="1585" height="723" alt="image" src="https://github.com/user-attachments/assets/29034449-c19e-4d90-9519-30153b178ab6" />
+<img width="1579" height="735" alt="image" src="https://github.com/user-attachments/assets/3d8fe8cb-a04a-4500-88b2-0511fdec94dd" />
+
 ## Quick start
 
 ```sh
