@@ -18,6 +18,7 @@ export type BuildingDescriptor = {
 
 export type Region = {
   path: string;
+  kind: "bin" | "work";
   origin: { x: number; y: number };
   size: { w: number; h: number };
   tint: number;

@@ -245,6 +245,56 @@ test("a new directory becomes a new region without disturbing existing ones", ()
   }
 });
 
+test("work directories become building-less regions of kind 'work'", () => {
+  const m = sampleManifest(3, "/usr/bin");
+  const { buildings, regions } = buildWorld(m, emptyCache(), [
+    "/home/me/project/src",
+  ]);
+  const work = regions.find((r) => r.path === "/home/me/project/src")!;
+  expect(work.kind).toBe("work");
+  expect(regions.find((r) => r.path === "/usr/bin")!.kind).toBe("bin");
+  expect(buildings.some((b) => b.district === "/home/me/project/src")).toBe(
+    false,
+  );
+});
+
+test("a work directory that also holds binaries stays a 'bin' region", () => {
+  const m = sampleManifest(2, "/usr/bin");
+  const { regions } = buildWorld(m, emptyCache(), ["/usr/bin"]);
+  const usrBin = regions.filter((r) => r.path === "/usr/bin");
+  expect(usrBin).toHaveLength(1);
+  expect(usrBin[0]!.kind).toBe("bin");
+});
+
+test("work regions do not overlap bin regions", () => {
+  const m = [...sampleManifest(9, "/usr/bin"), ...sampleManifest(4, "/opt/x")];
+  const { regions } = buildWorld(m, emptyCache(), ["/var/data", "/tmp/work"]);
+  for (let i = 0; i < regions.length; i++) {
+    for (let j = i + 1; j < regions.length; j++) {
+      const a = regions[i]!;
+      const b = regions[j]!;
+      const disjoint =
+        a.origin.x + a.size.w <= b.origin.x ||
+        b.origin.x + b.size.w <= a.origin.x ||
+        a.origin.y + a.size.h <= b.origin.y ||
+        b.origin.y + b.size.h <= a.origin.y;
+      expect(disjoint).toBe(true);
+    }
+  }
+});
+
+test("a newly-touched work directory keeps existing regions in place", () => {
+  const cache = emptyCache();
+  const m = sampleManifest(3, "/usr/bin");
+  const out1 = buildWorld(m, cache);
+  const usrBin1 = out1.regions.find((r) => r.path === "/usr/bin")!;
+
+  const out2 = buildWorld(m, cache, ["/var/log"]);
+  const usrBin2 = out2.regions.find((r) => r.path === "/usr/bin")!;
+  expect(usrBin2.origin).toEqual(usrBin1.origin);
+  expect(out2.regions.some((r) => r.path === "/var/log")).toBe(true);
+});
+
 test("placement cache assigns directories to incrementing region slots", () => {
   const cache = emptyCache();
   buildWorld(sampleManifest(2, "/usr/bin"), cache);

@@ -60,17 +60,18 @@ function groupByDirectory(
 }
 
 function assignSlots(
-  dirs: string[],
+  allDirs: string[],
+  binDirs: string[],
   groups: Map<string, ManifestEntry[]>,
   cache: PlacementCache,
 ): void {
   let nextRegion =
     cache.region.size > 0 ? Math.max(...cache.region.values()) + 1 : 0;
-  for (const dir of dirs) {
+  for (const dir of allDirs) {
     if (!cache.region.has(dir)) cache.region.set(dir, nextRegion++);
   }
 
-  for (const dir of dirs) {
+  for (const dir of binDirs) {
     const group = groups.get(dir)!;
     const taken = group
       .map((e) => cache.building.get(e.path))
@@ -124,6 +125,7 @@ function buildRegion(
   const tintRng = seedrandom(dir);
   const region: Region = {
     path: dir,
+    kind: group.length > 0 ? "bin" : "work",
     origin: { x: originX, y: originY },
     size: {
       w: (maxCol + 1) * TILE_SPACING + 2 * REGION_PADDING,
@@ -138,24 +140,28 @@ function buildRegion(
 export function buildWorld(
   manifest: ManifestEntry[],
   cache: PlacementCache = emptyCache(),
+  workDirs: string[] = [],
 ): World {
   const sorted = [...manifest].sort((a, b) =>
     a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
   );
   const groups = groupByDirectory(sorted);
-  const dirs = [...groups.keys()].sort();
-  if (dirs.length === 0) return { buildings: [], regions: [] };
+  const binDirs = [...groups.keys()];
+  const workOnly = workDirs.filter((d) => !groups.has(d));
+  const allDirs = [...new Set([...binDirs, ...workOnly])].sort();
+  if (allDirs.length === 0) return { buildings: [], regions: [] };
 
-  assignSlots(dirs, groups, cache);
+  assignSlots(allDirs, binDirs, groups, cache);
 
   const stride =
-    Math.max(...dirs.map((d) => regionFootprint(groups.get(d)!.length))) +
-    REGION_GUTTER;
+    Math.max(
+      ...allDirs.map((d) => regionFootprint((groups.get(d) ?? []).length)),
+    ) + REGION_GUTTER;
 
   const buildings: BuildingDescriptor[] = [];
   const regions: Region[] = [];
-  for (const dir of dirs) {
-    const built = buildRegion(dir, groups.get(dir)!, cache, stride);
+  for (const dir of allDirs) {
+    const built = buildRegion(dir, groups.get(dir) ?? [], cache, stride);
     regions.push(built.region);
     buildings.push(...built.buildings);
   }
