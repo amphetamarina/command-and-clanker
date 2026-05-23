@@ -1,5 +1,5 @@
 import type Phaser from "phaser";
-import { tileToScreen } from "./iso.ts";
+import { TILE_W, tileToScreen } from "./iso.ts";
 
 export const FLOOR_COUNT = 8;
 
@@ -20,12 +20,11 @@ export type GroundParams = {
   extentY: number;
   padding: number;
   desertMargin: number;
-  depth: number;
 };
 
 function hash01(ix: number, iy: number): number {
   let h = (ix * 374761393 + iy * 668265263) >>> 0;
-  h = (Math.imul(h ^ (h >>> 13), 1274126177) >>> 0) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
   return h / 4294967295;
 }
 
@@ -50,11 +49,11 @@ function inAnyRegion(x: number, y: number, regions: RegionBox[]): boolean {
   return false;
 }
 
-export function buildGroundTiles(
-  scene: Phaser.Scene,
+export function paintGround(
+  blitterFor: (key: string) => Phaser.GameObjects.Blitter,
   p: GroundParams,
-): Phaser.GameObjects.Image[] {
-  const tiles: Phaser.GameObjects.Image[] = [];
+): void {
+  const hw = TILE_W / 2;
   const px0 = -p.padding;
   const py0 = -p.padding;
   const px1 = p.extentX + p.padding;
@@ -62,9 +61,7 @@ export function buildGroundTiles(
 
   const place = (x: number, y: number, key: string) => {
     const s = tileToScreen(x, y);
-    tiles.push(
-      scene.add.image(s.x, s.y, key).setOrigin(0.5, 0).setDepth(p.depth),
-    );
+    blitterFor(key).create(s.x - hw, s.y);
   };
 
   for (let y = py0 - p.desertMargin; y < py1 + p.desertMargin; y++) {
@@ -80,12 +77,10 @@ export function buildGroundTiles(
       const dx = x < px0 ? px0 - x : x >= px1 ? x - (px1 - 1) : 0;
       const dy = y < py0 ? py0 - y : y >= py1 ? y - (py1 - 1) : 0;
       const dist = Math.max(dx, dy);
-      const threshold = dist / (p.desertMargin + 1);
-      if (valueNoise(x * DESERT_FREQ, y * DESERT_FREQ) > threshold) {
+      if (valueNoise(x * DESERT_FREQ, y * DESERT_FREQ) > dist / (p.desertMargin + 1)) {
         const v = Math.floor(hash01(x, y) * p.desertFloors.length);
         place(x, y, p.desertFloors[v]!);
       }
     }
   }
-  return tiles;
 }

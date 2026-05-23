@@ -8,7 +8,7 @@ import {
 } from "../shared/sprites.ts";
 import { killProcess, liveSocketUrl } from "./api.ts";
 import { Sidebar, type MinimapData } from "./sidebar.ts";
-import { buildGroundTiles, FLOOR_COUNT } from "./ground.ts";
+import { paintGround, FLOOR_COUNT } from "./ground.ts";
 import { placeWalls, WALL_KEYS, wallAssetUrl } from "./walls.ts";
 import { TILE_H, tileToScreen } from "./iso.ts";
 import {
@@ -132,7 +132,7 @@ export class CityScene extends Phaser.Scene {
   private regionByPath = new Map<string, Region>();
   private buildingByExe = new Map<string, BuildingDescriptor>();
   private npcs = new Map<number, NpcState>();
-  private floorTiles: Phaser.GameObjects.Image[] = [];
+  private groundBlitters = new Map<string, Phaser.GameObjects.Blitter>();
   private wallSprites: Phaser.GameObjects.Image[] = [];
   private regionGraphics: Phaser.GameObjects.Graphics | null = null;
   private regionLabels: Phaser.GameObjects.Text[] = [];
@@ -291,8 +291,17 @@ export class CityScene extends Phaser.Scene {
     return { x: Math.ceil(x), y: Math.ceil(y) };
   }
 
+  private groundBlitterFor(key: string): Phaser.GameObjects.Blitter {
+    let b = this.groundBlitters.get(key);
+    if (!b) {
+      b = this.add.blitter(0, 0, key).setDepth(GROUND_DEPTH);
+      this.groundBlitters.set(key, b);
+    }
+    return b;
+  }
+
   private redrawGround() {
-    for (const t of this.floorTiles) t.destroy();
+    for (const b of this.groundBlitters.values()) b.clear();
     for (const w of this.wallSprites) w.destroy();
     const extent = this.worldExtent();
 
@@ -313,7 +322,7 @@ export class CityScene extends Phaser.Scene {
       y1: r.origin.y + r.size.h,
     }));
 
-    this.floorTiles = buildGroundTiles(this, {
+    paintGround((key) => this.groundBlitterFor(key), {
       stationFloors: STATION_KEYS,
       desertFloors: DESERT_KEYS,
       buildingPads,
@@ -322,7 +331,6 @@ export class CityScene extends Phaser.Scene {
       extentY: extent.y,
       padding: GROUND_PADDING,
       desertMargin: DESERT_MARGIN,
-      depth: GROUND_DEPTH,
     });
     this.wallSprites = placeWalls(this, extent.x, extent.y, GROUND_PADDING);
   }
