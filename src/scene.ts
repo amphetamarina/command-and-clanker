@@ -34,15 +34,24 @@ const BAR_H = 3;
 const BAR_TRACK_COLOR = 0x14141e;
 const MEM_BAR_COLOR = 0x4aa6ff;
 const MEM_BAR_FULL = 0.2;
+const COMMUTE_MS = 1400;
+const WORK_MS = 1800;
+const READ_COLOR = "#6bd6ff";
+const WRITE_COLOR = "#ffae5a";
 
 type NpcState = {
   container: Phaser.GameObjects.Container;
   mech: Phaser.GameObjects.Image;
   cpuFill: Phaser.GameObjects.Rectangle;
   memFill: Phaser.GameObjects.Rectangle;
+  badge: Phaser.GameObjects.Text;
   building: BuildingDescriptor;
   currentTile: { x: number; y: number };
+  homeTile: { x: number; y: number };
   latest: ProcessSnapshot;
+  busy: boolean;
+  workingDir: string | null;
+  tripId: number;
 };
 
 type CitySceneData = { buildings: BuildingDescriptor[]; regions: Region[] };
@@ -93,6 +102,7 @@ function npcAssetUrl(key: NpcSpriteKey): string {
 export class CityScene extends Phaser.Scene {
   private buildings: BuildingDescriptor[] = [];
   private regions: Region[] = [];
+  private regionByPath = new Map<string, Region>();
   private buildingByExe = new Map<string, BuildingDescriptor>();
   private npcs = new Map<number, NpcState>();
   private groundGraphics: Phaser.GameObjects.Graphics | null = null;
@@ -177,6 +187,7 @@ export class CityScene extends Phaser.Scene {
     this.regionGraphics.clear();
     for (const label of this.regionLabels) label.destroy();
     this.regionLabels = [];
+    this.regionByPath = new Map(this.regions.map((r) => [r.path, r]));
 
     for (const r of this.regions) {
       this.regionGraphics.fillStyle(r.tint, REGION_TINT_ALPHA);
@@ -281,6 +292,7 @@ export class CityScene extends Phaser.Scene {
       const existing = this.npcs.get(p.pid);
       if (existing) {
         this.applyUsage(existing, p);
+        this.handleActivity(existing);
         continue;
       }
       const building = this.buildingByExe.get(p.exe);
@@ -288,6 +300,7 @@ export class CityScene extends Phaser.Scene {
       const state = this.createNpc(p, building);
       this.npcs.set(p.pid, state);
       this.scheduleWander(state);
+      this.handleActivity(state);
     }
     for (const [pid, state] of this.npcs) {
       if (!seen.has(pid)) {
@@ -330,6 +343,16 @@ export class CityScene extends Phaser.Scene {
         strokeThickness: 3,
       })
       .setOrigin(0.5, 1);
+    const badge = this.add
+      .text(0, top - 24, "", {
+        fontFamily: "ui-monospace, monospace",
+        fontSize: "10px",
+        color: READ_COLOR,
+        stroke: "#0a0a12",
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5, 1)
+      .setVisible(false);
 
     const container = this.add.container(spawn.screen.x, spawn.screen.y, [
       mech,
@@ -338,6 +361,7 @@ export class CityScene extends Phaser.Scene {
       memTrack,
       memFill,
       label,
+      badge,
     ]);
     container.setDepth(spawn.tileSum + 0.5);
 
@@ -346,9 +370,14 @@ export class CityScene extends Phaser.Scene {
       mech,
       cpuFill,
       memFill,
+      badge,
       building,
       currentTile: spawn.tile,
+      homeTile: spawn.tile,
       latest: p,
+      busy: false,
+      workingDir: null,
+      tripId: 0,
     };
     this.applyUsage(state, p);
     return state;
@@ -361,6 +390,90 @@ export class CityScene extends Phaser.Scene {
     state.memFill.displayWidth = BAR_W * clamp01(p.mem / MEM_BAR_FULL);
   }
 
+  private npcScreen(tile: { x: number; y: number }) {
+    const s = tileToScreen(tile.x, tile.y);
+    return { x: s.x, y: s.y + TILE_H / 2 };
+  }
+
+  private handleActivity(state: NpcState) {
+    const act = state.latest.activity;
+    if (!act || act.dir === state.building.district) return;
+    if (state.workingDir === act.dir) return;
+    const region = this.regionByPath.get(act.dir);
+    if (!region) return;
+
+    this.tweens.killTweensOf(state.container);
+    state.busy = true;
+    state.workingDir = act.dir;
+    const trip = ++state.tripId;
+    state.badge.setText(act.direction === "read" ? "▼ read" : "▲ write");
+    state.badge.setColor(act.direction === "read" ? READ_COLOR : WRITE_COLOR);
+    state.badge.setVisible(true);
+
+    const center = {
+      x: region.origin.x + region.size.w / 2,
+      y: region.origin.y + region.size.h / 2,
+    };
+    this.travelTo(state, center, () => {
+      if (trip !== state.tripId) return;
+      this.workInPlace(state);
+      this.time.delayedCall(WORK_MS, () => {
+        if (trip !== state.tripId) return;
+        this.returnHome(state, trip);
+      });
+    });
+  }
+
+  private travelTo(
+    state: NpcState,
+    tile: { x: number; y: number },
+    onArrive: () => void,
+  ) {
+    const start = { x: state.currentTile.x, y: state.currentTile.y };
+    const dest = this.npcScreen(tile);
+    this.tweens.add({
+      targets: state.container,
+      x: dest.x,
+      y: dest.y,
+      duration: COMMUTE_MS,
+      ease: "Sine.easeInOut",
+      onUpdate: (tween) => {
+        const p = tween.progress;
+        const cx = start.x + (tile.x - start.x) * p;
+        const cy = start.y + (tile.y - start.y) * p;
+        state.container.setDepth(cx + cy + 0.5);
+      },
+      onComplete: () => {
+        state.currentTile = { x: tile.x, y: tile.y };
+        state.container.setDepth(tile.x + tile.y + 0.5);
+        onArrive();
+      },
+    });
+  }
+
+  private workInPlace(state: NpcState) {
+    this.tweens.add({
+      targets: state.mech,
+      scaleY: 0.9,
+      duration: WORK_MS / 6,
+      ease: "Sine.easeInOut",
+      yoyo: true,
+      repeat: 2,
+    });
+  }
+
+  private returnHome(state: NpcState, trip: number) {
+    this.travelTo(state, state.homeTile, () => {
+      if (trip !== state.tripId) return;
+      state.busy = false;
+      state.workingDir = null;
+      state.badge.setVisible(false);
+      this.tweens.killTweensOf(state.mech);
+      state.mech.setScale(1);
+      this.wanderOnce(state);
+    });
+  }
+
   private scheduleWander(state: NpcState) {
     this.time.delayedCall(Math.random() * WANDER_STAGGER_MS, () =>
       this.wanderOnce(state),
@@ -368,7 +481,7 @@ export class CityScene extends Phaser.Scene {
   }
 
   private wanderOnce(state: NpcState) {
-    if (!state.container.active) return;
+    if (!state.container.active || state.busy) return;
     const off =
       WANDER_OFFSETS[Math.floor(Math.random() * WANDER_OFFSETS.length)]!;
     const targetTile = {
