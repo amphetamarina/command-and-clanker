@@ -221,6 +221,7 @@ export class CityScene extends Phaser.Scene {
       onKill: (pid) => void killProcess(pid),
       onBuildTerminal: () => void this.terminals?.spawn(),
     });
+    void this.terminals.restore();
     this.rebuildMinimapStatic();
 
     this.tooltip = this.createTooltip();

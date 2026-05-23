@@ -4,6 +4,9 @@ import { createTerminal, killTerminal, termSocketUrl } from "./api.ts";
 
 const COLS = 80;
 const ROWS = 24;
+const STORAGE_KEY = "isotop.terminals";
+const PROBE_RANGE = 12;
+const PROBE_TIMEOUT_MS = 1200;
 
 type TermWindow = {
   id: string;
@@ -31,9 +34,72 @@ export class TerminalsUI {
     const id = await createTerminal();
     if (!id) return;
     this.active.push(id);
+    this.saveActive();
     this.opts.onOpened(id);
     this.opts.onList([...this.active]);
     this.openWindow(id);
+  }
+
+  async restore(): Promise<void> {
+    const candidates = new Set<string>(this.loadSaved());
+    for (let i = 1; i <= PROBE_RANGE; i++) candidates.add(`t${i}`);
+    const checked = await Promise.all(
+      [...candidates].map(async (id) => ((await this.probe(id)) ? id : null)),
+    );
+    const alive = checked
+      .filter((id): id is string => id !== null)
+      .sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)));
+    this.active = alive;
+    this.saveActive();
+    for (const id of alive) this.opts.onOpened(id);
+    this.opts.onList([...this.active]);
+  }
+
+  private probe(id: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      let ws: WebSocket;
+      try {
+        ws = new WebSocket(termSocketUrl(id));
+      } catch {
+        resolve(false);
+        return;
+      }
+      let settled = false;
+      const finish = (alive: boolean) => {
+        if (settled) return;
+        settled = true;
+        try {
+          ws.close();
+        } catch {
+          /* ignore */
+        }
+        resolve(alive);
+      };
+      ws.addEventListener("open", () => finish(true));
+      ws.addEventListener("error", () => finish(false));
+      ws.addEventListener("close", () => finish(false));
+      setTimeout(() => finish(false), PROBE_TIMEOUT_MS);
+    });
+  }
+
+  private loadSaved(): string[] {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+      return Array.isArray(parsed)
+        ? parsed.filter((x): x is string => typeof x === "string")
+        : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private saveActive(): void {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.active));
+    } catch {
+      /* ignore */
+    }
   }
 
   open(id: string): void {
@@ -161,6 +227,7 @@ export class TerminalsUI {
     win.root.remove();
     this.windows.delete(id);
     this.active = this.active.filter((t) => t !== id);
+    this.saveActive();
     killTerminal(id);
     this.opts.onClosed(id);
     this.opts.onList([...this.active]);
