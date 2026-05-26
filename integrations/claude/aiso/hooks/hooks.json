@@ -1,79 +1,19 @@
 {
   "hooks": {
     "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "http",
-            "url": "http://127.0.0.1:3001/ingest",
-            "headers": {
-              "Authorization": "Bearer $AISO_TOKEN",
-              "X-Aiso-Session": "$AISO_SESSION"
-            },
-            "allowedEnvVars": ["AISO_TOKEN", "AISO_SESSION"]
-          }
-        ]
-      }
+      { "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/aiso-hook.sh" }] }
     ],
     "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "http",
-            "url": "http://127.0.0.1:3001/ingest",
-            "headers": {
-              "Authorization": "Bearer $AISO_TOKEN",
-              "X-Aiso-Session": "$AISO_SESSION"
-            },
-            "allowedEnvVars": ["AISO_TOKEN", "AISO_SESSION"]
-          }
-        ]
-      }
+      { "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/aiso-hook.sh" }] }
     ],
     "PostToolUse": [
-      {
-        "hooks": [
-          {
-            "type": "http",
-            "url": "http://127.0.0.1:3001/ingest",
-            "headers": {
-              "Authorization": "Bearer $AISO_TOKEN",
-              "X-Aiso-Session": "$AISO_SESSION"
-            },
-            "allowedEnvVars": ["AISO_TOKEN", "AISO_SESSION"]
-          }
-        ]
-      }
+      { "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/aiso-hook.sh" }] }
     ],
     "SubagentStart": [
-      {
-        "hooks": [
-          {
-            "type": "http",
-            "url": "http://127.0.0.1:3001/ingest",
-            "headers": {
-              "Authorization": "Bearer $AISO_TOKEN",
-              "X-Aiso-Session": "$AISO_SESSION"
-            },
-            "allowedEnvVars": ["AISO_TOKEN", "AISO_SESSION"]
-          }
-        ]
-      }
+      { "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/aiso-hook.sh" }] }
     ],
     "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "http",
-            "url": "http://127.0.0.1:3001/ingest",
-            "headers": {
-              "Authorization": "Bearer $AISO_TOKEN",
-              "X-Aiso-Session": "$AISO_SESSION"
-            },
-            "allowedEnvVars": ["AISO_TOKEN", "AISO_SESSION"]
-          }
-        ]
-      }
+      { "hooks": [{ "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/aiso-hook.sh" }] }
     ]
   }
 }

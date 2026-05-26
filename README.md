@@ -15,22 +15,23 @@ bun install    # installs deps and compiles node-pty's native PTY
 bun run dev    # Node backend + Vite frontend on :5173
 ```
 
-Open <http://localhost:5173>, click **+ Terminal**, and in that terminal start
-your agent with the AIso plugin:
+Open <http://localhost:5173> and click **+ Terminal**. To make agents report to
+the map, install the adapters once:
 
 ```sh
-claude --plugin-dir $AISO_PATH
+bun run setup   # wires the Claude Code + opencode adapters into your config
 ```
 
-`AISO_PATH` is injected into every AIso terminal, so that is the whole setup —
-as the agent works, robots, folder islands, and file icons appear on the map.
-
-For **opencode**, link its adapter once (its path is injected as
-`AISO_OPENCODE`), then just run `opencode` in an AIso terminal:
+Then run an agent inside any AIso terminal and watch it work:
 
 ```sh
-mkdir -p ~/.config/opencode/plugin && ln -sf "$AISO_OPENCODE" ~/.config/opencode/plugin/aiso.js
+claude       # Claude Code
+opencode     # opencode
 ```
+
+The adapters only report from inside an AIso terminal (where `AISO_SESSION` is
+injected), so they stay quiet everywhere else. No-install alternative for
+Claude: `claude --plugin-dir $AISO_PATH`.
 
 > The backend runs under **Node** (for `node-pty`); tests run under **Bun**.
 > `bun install` compiles `node-pty`, which needs a C/C++ toolchain
@@ -59,6 +60,14 @@ shell, so events land on the right island. The backend turns them into islands
 and robots and streams the world to a Vite + Phaser 3 frontend over WebSocket.
 There is no `/proc` scraping; AIso shows only what agents report. See
 [`docs/architecture.md`](docs/architecture.md).
+
+The Claude adapter is a plugin under
+[`integrations/claude/aiso`](integrations/claude/aiso) (with a marketplace
+manifest), and the opencode adapter is a package under
+[`integrations/opencode/aiso`](integrations/opencode/aiso)
+(`@aiso/opencode-plugin`). `bun run setup` wires the local copies; to share
+them, add the Claude marketplace (`/plugin marketplace add …/integrations/claude`)
+or publish the opencode package and list it in `opencode.json`.
 
 ```
 server/        Node backend: /ingest event sink, world builder,

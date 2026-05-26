@@ -17,18 +17,19 @@ The hooks send `AISO_SESSION` and `AISO_TOKEN` as headers, so the server knows
 which island the events belong to. Run Claude Code **inside an AIso terminal**
 and its reads/writes/subagents animate on that terminal's island.
 
-## Install (development)
+## Install
 
-The AIso terminal also injects `AISO_PATH` (the absolute path to this plugin),
-so inside an AIso terminal you can just run:
+From the repo, run `bun run setup` once: it merges these hooks (as an absolute
+command path) into `~/.claude/settings.json`, so any `claude` launched inside an
+AIso terminal reports automatically. The hook is gated on `AISO_SESSION` and
+runs with `curl --max-time 1`, so it is silent and non-blocking everywhere else.
 
-```sh
-claude --plugin-dir $AISO_PATH
-```
+No-install alternative: the AIso terminal injects `AISO_PATH` (this plugin's
+directory), so you can run `claude --plugin-dir $AISO_PATH` instead.
 
-A first-class installer (`aiso install`) and a marketplace listing are planned;
-for now the `--plugin-dir` flag (or copying `hooks/hooks.json` into your
-`~/.claude/settings.json` `hooks` block) is enough to dogfood it.
+To share it as a plugin, this directory's parent carries a
+`.claude-plugin/marketplace.json`; add it with
+`/plugin marketplace add <repo>/integrations/claude` and install `aiso`.
 
 ## Events sent
 

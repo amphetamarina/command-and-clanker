@@ -1,0 +1,11 @@
+{
+  "name": "aiso",
+  "owner": { "name": "AIso" },
+  "plugins": [
+    {
+      "name": "aiso",
+      "source": "./aiso",
+      "description": "Stream Claude Code tool calls and subagents to the AIso map."
+    }
+  ]
+}

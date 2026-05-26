@@ -8,6 +8,7 @@
     "dev:server": "node --experimental-strip-types --disable-warning=ExperimentalWarning --watch server/index.ts",
     "dev:client": "vite",
     "start": "node --experimental-strip-types --disable-warning=ExperimentalWarning server/index.ts",
+    "setup": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/install.ts",
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
