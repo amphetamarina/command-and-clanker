@@ -1,12 +1,17 @@
+import { spawn } from "node:child_process";
+
 const procs = [
-  Bun.spawn(["bun", "--hot", "server/index.ts"], {
-    stdout: "inherit",
-    stderr: "inherit",
-  }),
-  Bun.spawn(["bunx", "vite"], {
-    stdout: "inherit",
-    stderr: "inherit",
-  }),
+  spawn(
+    "node",
+    [
+      "--experimental-strip-types",
+      "--disable-warning=ExperimentalWarning",
+      "--watch",
+      "server/index.ts",
+    ],
+    { stdio: "inherit" },
+  ),
+  spawn("node_modules/.bin/vite", [], { stdio: "inherit" }),
 ];
 
 const shutdown = () => {
@@ -16,8 +21,4 @@ const shutdown = () => {
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
-
-await Promise.race(procs.map((p) => p.exited));
-shutdown();
-
-export {};
+for (const p of procs) p.on("exit", shutdown);

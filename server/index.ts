@@ -1,4 +1,6 @@
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
+import { WebSocketServer, type WebSocket } from "ws";
 import { scanPaths, type HashCache } from "./scanner.ts";
 import { buildWorld, releaseRegion } from "./world-builder.ts";
 import {
@@ -13,7 +15,6 @@ import type { World } from "../shared/types.ts";
 
 const PORT = Number(process.env.TTY_API_PORT ?? 3001);
 const TICK_MS = 1000;
-const TOPIC = "isotop";
 const WORK_DIR_TTL_MS = 15000;
 const CACHE_PATH =
   process.env.ISOTOP_CACHE ?? join(process.cwd(), ".isotop-cache.json");
@@ -25,10 +26,7 @@ const workDirLastActive = new Map<string, number>();
 const sampler = new ProcSampler();
 const activitySampler = new FileActivitySampler();
 const terminals = new TerminalManager();
-
-type WSData =
-  | { kind: "live" }
-  | { kind: "term"; id: string; client?: TermClient };
+const liveClients = new Set<WebSocket>();
 
 async function buildWorldFor(paths: string[]): Promise<World> {
   const manifest = await scanPaths(paths, hashCache);
@@ -37,135 +35,168 @@ async function buildWorldFor(paths: string[]): Promise<World> {
   return world;
 }
 
-const server = Bun.serve<WSData>({
-  port: PORT,
-  async fetch(req, srv) {
-    const url = new URL(req.url);
+function sendJson(res: ServerResponse, status: number, body: unknown): void {
+  const payload = JSON.stringify(body);
+  res.writeHead(status, { "content-type": "application/json" });
+  res.end(payload);
+}
 
-    if (url.pathname === "/live") {
-      if (srv.upgrade(req, { data: { kind: "live" } })) return undefined;
-      return new Response("WS upgrade failed", { status: 400 });
+async function readBody(req: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(chunk as Buffer);
+  if (chunks.length === 0) return {};
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
+function broadcast(message: string): void {
+  for (const ws of liveClients) {
+    if (ws.readyState === ws.OPEN) ws.send(message);
+  }
+}
+
+async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const url = new URL(req.url ?? "/", "http://localhost");
+  const { pathname } = url;
+  const method = req.method ?? "GET";
+
+  if (pathname === "/health") {
+    return sendJson(res, 200, { status: "ok" });
+  }
+
+  if (pathname === "/term/new" && method === "POST") {
+    let cols: number | undefined;
+    let rows: number | undefined;
+    try {
+      const body = (await readBody(req)) as { cols?: number; rows?: number };
+      cols = body.cols;
+      rows = body.rows;
+    } catch {
+      /* defaults */
     }
+    const id = terminals.create(cols, rows);
+    console.log(`[term] created ${id} (${cols ?? 80}x${rows ?? 24})`);
+    return sendJson(res, 200, { id });
+  }
 
-    if (url.pathname === "/term") {
-      const id = url.searchParams.get("id") ?? "";
-      if (!terminals.get(id)) return new Response("no such term", { status: 404 });
-      if (srv.upgrade(req, { data: { kind: "term", id } })) return undefined;
-      return new Response("WS upgrade failed", { status: 400 });
+  if (pathname === "/term/kill" && method === "POST") {
+    try {
+      const { id } = (await readBody(req)) as { id?: unknown };
+      terminals.kill(String(id));
+      return sendJson(res, 200, { ok: true });
+    } catch {
+      return sendJson(res, 400, { ok: false });
     }
+  }
 
-    if (url.pathname === "/term/new" && req.method === "POST") {
-      const id = terminals.create();
-      console.log(`[term] created ${id}`);
-      return Response.json({ id });
+  if (pathname === "/world") {
+    const started = performance.now();
+    const paths = await getRunningBinaryPaths("/proc", terminals.pids());
+    for (const p of paths) knownExes.add(p);
+    const world = await buildWorldFor(paths);
+    const elapsedMs = Math.round(performance.now() - started);
+    console.log(
+      `[world] ${paths.length} unique exes -> ${world.buildings.length} buildings across ${world.regions.length} regions in ${elapsedMs}ms`,
+    );
+    return sendJson(res, 200, world);
+  }
+
+  if (pathname === "/procs") {
+    const processes = await getRunningProcesses("/proc", terminals.pids());
+    return sendJson(res, 200, { capturedAt: Date.now(), processes });
+  }
+
+  if (pathname === "/kill" && method === "POST") {
+    let pid: number;
+    try {
+      pid = Number((await readBody(req) as { pid?: unknown }).pid);
+    } catch {
+      return sendJson(res, 400, { ok: false, error: "bad request" });
     }
-
-    if (url.pathname === "/term/kill" && req.method === "POST") {
-      let id = "";
-      try {
-        id = String((await req.json()).id);
-      } catch {
-        return Response.json({ ok: false }, { status: 400 });
-      }
-      terminals.kill(id);
-      return Response.json({ ok: true });
+    if (!Number.isInteger(pid) || pid <= 1) {
+      return sendJson(res, 400, { ok: false, error: "invalid pid" });
     }
-
-    if (url.pathname === "/health") {
-      return Response.json({ status: "ok" });
+    try {
+      process.kill(pid, "SIGTERM");
+      console.log(`[kill] sent SIGTERM to ${pid}`);
+      return sendJson(res, 200, { ok: true, pid });
+    } catch (err) {
+      return sendJson(res, 400, { ok: false, error: (err as Error).message });
     }
+  }
 
-    if (url.pathname === "/world") {
-      const started = performance.now();
-      const paths = await getRunningBinaryPaths("/proc", terminals.pids());
-      for (const p of paths) knownExes.add(p);
-      const world = await buildWorldFor(paths);
-      const elapsedMs = Math.round(performance.now() - started);
-      console.log(
-        `[world] ${paths.length} unique exes -> ${world.buildings.length} buildings across ${world.regions.length} regions in ${elapsedMs}ms`,
-      );
-      return Response.json(world);
-    }
+  res.writeHead(404, { "content-type": "text/plain" });
+  res.end("not found");
+}
 
-    if (url.pathname === "/procs") {
-      const processes = await getRunningProcesses("/proc", terminals.pids());
-      return Response.json({ capturedAt: Date.now(), processes });
-    }
-
-    if (url.pathname === "/kill" && req.method === "POST") {
-      let pid: number;
-      try {
-        pid = Number((await req.json()).pid);
-      } catch {
-        return Response.json({ ok: false, error: "bad request" }, { status: 400 });
-      }
-      if (!Number.isInteger(pid) || pid <= 1) {
-        return Response.json({ ok: false, error: "invalid pid" }, { status: 400 });
-      }
-      try {
-        process.kill(pid, "SIGTERM");
-        console.log(`[kill] sent SIGTERM to ${pid}`);
-        return Response.json({ ok: true, pid });
-      } catch (err) {
-        return Response.json(
-          { ok: false, error: (err as Error).message },
-          { status: 400 },
-        );
-      }
-    }
-
-    return new Response("not found", { status: 404 });
-  },
-  websocket: {
-    open(ws) {
-      if (ws.data.kind === "term") {
-        const term = terminals.get(ws.data.id);
-        if (!term) {
-          ws.close();
-          return;
-        }
-        const client: TermClient = { send: (data) => ws.send(data) };
-        ws.data.client = client;
-        term.attach(client);
-        return;
-      }
-      ws.subscribe(TOPIC);
-      console.log("[ws] client connected");
-    },
-    close(ws) {
-      if (ws.data.kind === "term" && ws.data.client) {
-        terminals.get(ws.data.id)?.detach(ws.data.client);
-        return;
-      }
-      console.log("[ws] client disconnected");
-    },
-    message(ws, message) {
-      if (ws.data.kind === "term") {
-        terminals.get(ws.data.id)?.write(
-          typeof message === "string" ? message : message.toString(),
-        );
-      }
-    },
-  },
+const httpServer = createServer((req, res) => {
+  handle(req, res).catch((err) => {
+    console.warn(`[http] ${(err as Error).message}`);
+    if (!res.headersSent) sendJson(res, 500, { error: "internal" });
+  });
 });
 
-console.log(`[server] listening on http://localhost:${server.port}`);
-console.log(`[server] regions = directories of currently running binaries`);
+const wss = new WebSocketServer({ noServer: true });
+
+httpServer.on("upgrade", (req, socket, head) => {
+  const url = new URL(req.url ?? "/", "http://localhost");
+  if (url.pathname === "/live") {
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      liveClients.add(ws);
+      console.log("[ws] client connected");
+      ws.on("close", () => {
+        liveClients.delete(ws);
+        console.log("[ws] client disconnected");
+      });
+    });
+    return;
+  }
+  if (url.pathname === "/term") {
+    const id = url.searchParams.get("id") ?? "";
+    const term = terminals.get(id);
+    if (!term) {
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      const client: TermClient = {
+        send: (data) => {
+          if (ws.readyState === ws.OPEN) ws.send(data);
+        },
+      };
+      term.attach(client);
+      ws.on("message", (raw) => {
+        const text = raw.toString();
+        let msg: { i?: string; r?: [number, number] } | null = null;
+        try {
+          msg = JSON.parse(text);
+        } catch {
+          term.write(text);
+          return;
+        }
+        if (typeof msg?.i === "string") term.write(msg.i);
+        else if (Array.isArray(msg?.r)) term.resize(msg.r[0], msg.r[1]);
+      });
+      ws.on("close", () => term.detach(client));
+    });
+    return;
+  }
+  socket.destroy();
+});
+
+httpServer.listen(PORT, () => {
+  console.log(`[server] listening on http://localhost:${PORT}`);
+  console.log(`[server] regions = directories of currently running binaries`);
+});
 
 setInterval(async () => {
-  if (server.subscriberCount(TOPIC) === 0) return;
+  if (liveClients.size === 0) return;
   try {
     const processes = await sampler.sample("/proc", terminals.pids());
     const activity = await activitySampler.sample(processes.map((p) => p.pid));
     for (const p of processes) p.activity = activity.get(p.pid) ?? null;
 
-    server.publish(
-      TOPIC,
-      JSON.stringify({
-        kind: "procs",
-        capturedAt: Date.now(),
-        processes,
-      }),
+    broadcast(
+      JSON.stringify({ kind: "procs", capturedAt: Date.now(), processes }),
     );
 
     const now = Date.now();
@@ -198,8 +229,7 @@ setInterval(async () => {
       const world = await buildWorldFor([...knownExes]);
       const freshSet = new Set(freshExes);
       const newBuildings = world.buildings.filter((b) => freshSet.has(b.id));
-      server.publish(
-        TOPIC,
+      broadcast(
         JSON.stringify({
           kind: "world-delta",
           buildings: newBuildings,

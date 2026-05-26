@@ -52,9 +52,16 @@ export function termSocketUrl(id: string): string {
   return `${apiSocketBase()}/term?id=${encodeURIComponent(id)}`;
 }
 
-export async function createTerminal(): Promise<string | null> {
+export async function createTerminal(
+  cols?: number,
+  rows?: number,
+): Promise<string | null> {
   try {
-    const res = await fetch("/term/new", { method: "POST" });
+    const res = await fetch("/term/new", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cols, rows }),
+    });
     if (!res.ok) return null;
     return ((await res.json()) as { id: string }).id;
   } catch {

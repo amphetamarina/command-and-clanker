@@ -1,38 +1,34 @@
+import * as pty from "node-pty";
+
 const OUTPUT_BUFFER_CAP = 16384;
+const DEFAULT_COLS = 80;
+const DEFAULT_ROWS = 24;
 
 export type TermClient = { send: (data: string) => void };
 
 class Terminal {
   readonly id: string;
   readonly pid: number;
-  private proc: ReturnType<typeof Bun.spawn>;
+  private proc: pty.IPty;
   private buffer = "";
   private clients = new Set<TermClient>();
 
-  constructor(id: string, onExit: () => void) {
+  constructor(id: string, cols: number, rows: number, onExit: () => void) {
     this.id = id;
     const shell = process.env.SHELL ?? "bash";
-    this.proc = Bun.spawn(["script", "-qfc", `exec ${shell} -i`, "/dev/null"], {
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "ignore",
-      env: { ...process.env, TERM: "xterm-256color" },
-      onExit: () => onExit(),
+    this.proc = pty.spawn(shell, ["-i"], {
+      name: "xterm-256color",
+      cols,
+      rows,
+      cwd: process.env.HOME ?? process.cwd(),
+      env: process.env as Record<string, string>,
     });
     this.pid = this.proc.pid;
-    void this.pump();
-  }
-
-  private async pump() {
-    const reader = (this.proc.stdout as ReadableStream<Uint8Array>).getReader();
-    const decoder = new TextDecoder();
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      const text = decoder.decode(value);
-      this.buffer = (this.buffer + text).slice(-OUTPUT_BUFFER_CAP);
-      for (const client of this.clients) client.send(text);
-    }
+    this.proc.onData((data) => {
+      this.buffer = (this.buffer + data).slice(-OUTPUT_BUFFER_CAP);
+      for (const client of this.clients) client.send(data);
+    });
+    this.proc.onExit(() => onExit());
   }
 
   attach(client: TermClient) {
@@ -45,9 +41,11 @@ class Terminal {
   }
 
   write(data: string) {
-    const sink = this.proc.stdin as { write: (d: string) => void; flush: () => void };
-    sink.write(data);
-    sink.flush();
+    this.proc.write(data);
+  }
+
+  resize(cols: number, rows: number) {
+    if (cols > 0 && rows > 0) this.proc.resize(cols, rows);
   }
 
   kill() {
@@ -63,11 +61,11 @@ export class TerminalManager {
   private terminals = new Map<string, Terminal>();
   private seq = 0;
 
-  create(): string {
+  create(cols = DEFAULT_COLS, rows = DEFAULT_ROWS): string {
     const id = `t${++this.seq}`;
     this.terminals.set(
       id,
-      new Terminal(id, () => this.terminals.delete(id)),
+      new Terminal(id, cols, rows, () => this.terminals.delete(id)),
     );
     return id;
   }

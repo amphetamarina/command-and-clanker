@@ -44,7 +44,10 @@ export class TerminalsUI {
     try {
       pane.fit.fit();
     } catch {
-      /* container not measurable yet */
+      return; // container not measurable yet
+    }
+    if (pane.ws.readyState === WebSocket.OPEN) {
+      pane.ws.send(JSON.stringify({ r: [pane.term.cols, pane.term.rows] }));
     }
   }
 
@@ -106,8 +109,9 @@ export class TerminalsUI {
     const pane: Pane = { id, root, term, fit, ws: new WebSocket(termSocketUrl(id)) };
     const ws = pane.ws;
     ws.addEventListener("message", (e) => term.write(e.data as string));
+    ws.addEventListener("open", () => this.safeFit(pane));
     term.onData((d) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(d);
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ i: d }));
     });
     ws.addEventListener("close", () => term.write("\r\n[disconnected]\r\n"));
 
