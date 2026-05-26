@@ -10,7 +10,12 @@ import {
 import { liveSocketUrl } from "./api.ts";
 import { Sidebar, SIDEBAR_FRACTION } from "./sidebar.ts";
 import { TerminalsUI } from "./terminals.ts";
-import { drawHostPanel } from "./ground.ts";
+import {
+  drawIslandSides,
+  drawIslandEdges,
+  paintIslandTop,
+  FLOOR_COUNT,
+} from "./ground.ts";
 import { TILE_H, tileToScreen } from "./iso.ts";
 import {
   NPC_VARIANT_KEYS,
@@ -21,7 +26,13 @@ import {
 } from "./npc.ts";
 
 const GROUND_DEPTH = -20;
+const FLOOR_DEPTH = -19;
+const EDGE_DEPTH = -18;
 const LABEL_DEPTH = 100000;
+const STATION_KEYS = Array.from(
+  { length: FLOOR_COUNT },
+  (_, i) => `floor/station/${i + 1}`,
+);
 const WORK_LABEL_COLOR = "#7fe0d0";
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 4;
@@ -112,13 +123,20 @@ function npcAssetUrl(key: NpcSpriteKey): string {
   return `/isotop-assets/sci-fi/units/Mech/${dir}/Idle/idlesued.png`;
 }
 
+function terrainAssetUrl(index: number): string {
+  const n = index.toString().padStart(2, "0");
+  return `/isotop-assets/sci-fi/terrain/station/floor-${n}.png`;
+}
+
 export class CityScene extends Phaser.Scene {
   private buildings: BuildingDescriptor[] = [];
   private regions: Region[] = [];
   private regionByPath = new Map<string, Region>();
   private buildingByExe = new Map<string, BuildingDescriptor>();
   private npcs = new Map<number, NpcState>();
-  private regionGraphics: Phaser.GameObjects.Graphics | null = null;
+  private sidesGraphics: Phaser.GameObjects.Graphics | null = null;
+  private edgesGraphics: Phaser.GameObjects.Graphics | null = null;
+  private groundBlitters = new Map<string, Phaser.GameObjects.Blitter>();
   private regionLabels: Phaser.GameObjects.Text[] = [];
   private tooltip: HTMLDivElement | null = null;
   private dragging = false;
@@ -153,6 +171,9 @@ export class CityScene extends Phaser.Scene {
     for (const key of NPC_VARIANT_KEYS) {
       this.load.image(key, npcAssetUrl(key));
     }
+    for (let i = 0; i < FLOOR_COUNT; i++) {
+      this.load.image(STATION_KEYS[i]!, terrainAssetUrl(i + 1));
+    }
     this.load.image("icon/terminal", "/isotop-assets/sci-fi/icons/terminal.png");
   }
 
@@ -164,7 +185,8 @@ export class CityScene extends Phaser.Scene {
     this.applyCameraViewport();
     this.scale.on("resize", () => this.applyCameraViewport());
 
-    this.regionGraphics = this.add.graphics().setDepth(GROUND_DEPTH);
+    this.sidesGraphics = this.add.graphics().setDepth(GROUND_DEPTH);
+    this.edgesGraphics = this.add.graphics().setDepth(EDGE_DEPTH);
     this.renderRegions();
 
     for (const d of sorted) {
@@ -214,9 +236,20 @@ export class CityScene extends Phaser.Scene {
 
 
 
+  private groundBlitterFor(key: string): Phaser.GameObjects.Blitter {
+    let b = this.groundBlitters.get(key);
+    if (!b) {
+      b = this.add.blitter(0, 0, key).setDepth(FLOOR_DEPTH);
+      this.groundBlitters.set(key, b);
+    }
+    return b;
+  }
+
   private renderRegions() {
-    if (!this.regionGraphics) return;
-    this.regionGraphics.clear();
+    if (!this.sidesGraphics || !this.edgesGraphics) return;
+    this.sidesGraphics.clear();
+    this.edgesGraphics.clear();
+    for (const b of this.groundBlitters.values()) b.clear();
     for (const label of this.regionLabels) label.destroy();
     this.regionLabels = [];
     this.regionByPath = new Map(this.regions.map((r) => [r.path, r]));
@@ -225,7 +258,9 @@ export class CityScene extends Phaser.Scene {
       (a, b) => a.origin.x + a.origin.y - (b.origin.x + b.origin.y),
     );
     for (const r of ordered) {
-      drawHostPanel(this.regionGraphics, r);
+      drawIslandSides(this.sidesGraphics, r);
+      paintIslandTop((key) => this.groundBlitterFor(key), r, STATION_KEYS);
+      drawIslandEdges(this.edgesGraphics, r);
 
       const isWork = r.kind === "work";
       const corner = tileToScreen(r.origin.x, r.origin.y);
