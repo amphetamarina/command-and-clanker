@@ -1,5 +1,4 @@
 {
-  "_comment": "Streams Claude Code activity to AIso. AISO_SESSION/AISO_TOKEN are injected into the shell environment by the AIso terminal that launched this agent; they tag the event with its terminal island and authorize the local ingest endpoint. The endpoint acks instantly so these hooks do not block the agent.",
   "hooks": {
     "SessionStart": [
       {
