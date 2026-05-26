@@ -7,8 +7,8 @@ import {
   TOOL_SPRITE_KEYS,
   type BuildingSpriteKey,
 } from "../shared/sprites.ts";
-import { killProcess, liveSocketUrl } from "./api.ts";
-import { Sidebar, type MinimapStatic } from "./sidebar.ts";
+import { liveSocketUrl } from "./api.ts";
+import { Sidebar } from "./sidebar.ts";
 import { TerminalsUI } from "./terminals.ts";
 import { paintGround, FLOOR_COUNT } from "./ground.ts";
 import { placeWalls, WALL_KEYS, wallAssetUrl } from "./walls.ts";
@@ -150,9 +150,6 @@ export class CityScene extends Phaser.Scene {
     { sprite: Phaser.GameObjects.Image; label: Phaser.GameObjects.Text }
   >();
   private termCount = 0;
-  private selectedPid: number | null = null;
-  private selectionMarker: Phaser.GameObjects.Ellipse | null = null;
-  private minimapReady = false;
 
   constructor() {
     super("city");
@@ -214,90 +211,15 @@ export class CityScene extends Phaser.Scene {
         this.sidebar?.setTerminals(ids, (id) => this.terminals?.open(id)),
     });
     this.sidebar = new Sidebar({
-      onNavigate: (x, y) => this.cameras.main.centerOn(x, y),
-      onKill: (pid) => void killProcess(pid),
       onBuildTerminal: () => void this.terminals?.spawn(),
     });
     void this.terminals.restore();
-    this.rebuildMinimapStatic();
 
     this.tooltip = this.createTooltip();
     this.setupPan();
     this.setupZoom();
     this.setupTooltipFollow();
     this.startLiveSocket();
-  }
-
-  override update() {
-    if (!this.sidebar || !this.minimapReady) return;
-    const view = this.cameras.main.worldView;
-    const npcs = [...this.npcs.entries()].map(([pid, s]) => ({
-      x: s.container.x,
-      y: s.container.y,
-      selected: pid === this.selectedPid,
-      working: s.busy,
-    }));
-    this.sidebar.drawMinimap(npcs, {
-      x: view.x,
-      y: view.y,
-      w: view.width,
-      h: view.height,
-    });
-  }
-
-  private rebuildMinimapStatic() {
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    const note = (p: { x: number; y: number }) => {
-      minX = Math.min(minX, p.x);
-      minY = Math.min(minY, p.y);
-      maxX = Math.max(maxX, p.x);
-      maxY = Math.max(maxY, p.y);
-    };
-
-    const regions = this.regions.map((r) => {
-      const corners = [
-        tileToScreen(r.origin.x, r.origin.y),
-        tileToScreen(r.origin.x + r.size.w, r.origin.y),
-        tileToScreen(r.origin.x + r.size.w, r.origin.y + r.size.h),
-        tileToScreen(r.origin.x, r.origin.y + r.size.h),
-      ];
-      const xs = corners.map((c) => c.x);
-      const ys = corners.map((c) => c.y);
-      const box = {
-        x: Math.min(...xs),
-        y: Math.min(...ys),
-        w: Math.max(...xs) - Math.min(...xs),
-        h: Math.max(...ys) - Math.min(...ys),
-        tint: r.tint,
-        work: r.kind === "work",
-      };
-      note({ x: box.x, y: box.y });
-      note({ x: box.x + box.w, y: box.y + box.h });
-      return box;
-    });
-
-    const buildings = this.buildings.map((b) => {
-      const p = tileToScreen(b.tile.x, b.tile.y);
-      note(p);
-      return p;
-    });
-
-    if (!Number.isFinite(minX)) {
-      minX = -100;
-      minY = -100;
-      maxX = 100;
-      maxY = 100;
-    }
-    const staticData: MinimapStatic = {
-      bounds: { minX, minY, maxX, maxY },
-      regions,
-      buildings,
-    };
-    this.sidebar?.setMinimapStatic(staticData);
-    this.minimapReady = true;
   }
 
   private worldExtent(): { x: number; y: number } {
@@ -469,7 +391,6 @@ export class CityScene extends Phaser.Scene {
           this.regions = msg.regions;
           this.renderRegions();
           this.redrawGround();
-          this.rebuildMinimapStatic();
           console.log(
             `[ws] +${msg.buildings.length} new building(s), ${msg.regions.length} regions`,
           );
@@ -494,7 +415,6 @@ export class CityScene extends Phaser.Scene {
       if (existing) {
         this.applyUsage(existing, p);
         this.handleActivity(existing);
-        if (p.pid === this.selectedPid) this.refreshSelectionInfo();
         continue;
       }
       const building = this.buildingByExe.get(p.exe);
@@ -506,20 +426,6 @@ export class CityScene extends Phaser.Scene {
     }
     for (const [pid, state] of this.npcs) {
       if (!seen.has(pid)) {
-        if (pid === this.selectedPid) {
-          const p = state.latest;
-          this.sidebar?.setSelection({
-            pid: p.pid,
-            comm: p.comm,
-            exe: p.exe,
-            cpu: 0,
-            mem: 0,
-            activity: null,
-            alive: false,
-          });
-          this.selectedPid = null;
-          this.selectionMarker = null;
-        }
         state.container.destroy();
         this.npcs.delete(pid);
       }
@@ -535,7 +441,6 @@ export class CityScene extends Phaser.Scene {
     mech.setInteractive({ pixelPerfect: true });
     mech.on("pointerover", () => this.showProcTooltip(state.latest));
     mech.on("pointerout", () => this.hideTooltip());
-    mech.on("pointerup", () => this.selectNpc(state.latest.pid));
 
     const top = -mech.displayHeight;
     const left = -BAR_W / 2;
@@ -612,36 +517,6 @@ export class CityScene extends Phaser.Scene {
     return { x: s.x, y: s.y + TILE_H / 2 };
   }
 
-  private selectNpc(pid: number) {
-    const state = this.npcs.get(pid);
-    if (!state) return;
-    this.selectedPid = pid;
-    this.selectionMarker?.destroy();
-    const marker = this.add
-      .ellipse(0, -2, 28, 14)
-      .setStrokeStyle(2, 0x7fff7f, 0.9);
-    state.container.addAt(marker, 0);
-    this.selectionMarker = marker;
-    this.refreshSelectionInfo();
-  }
-
-  private refreshSelectionInfo() {
-    if (!this.sidebar || this.selectedPid === null) return;
-    const state = this.npcs.get(this.selectedPid);
-    if (!state) return;
-    const p = state.latest;
-    this.sidebar.setSelection({
-      pid: p.pid,
-      comm: p.comm,
-      exe: p.exe,
-      cpu: p.cpu,
-      mem: p.mem,
-      activity: p.activity
-        ? { dir: p.activity.dir, direction: p.activity.direction }
-        : null,
-      alive: true,
-    });
-  }
 
   private handleActivity(state: NpcState) {
     const act = state.latest.activity;
