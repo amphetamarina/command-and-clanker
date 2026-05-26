@@ -1,29 +1,138 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readlink } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { buildWorld, releaseRegion, type TerminalInfo } from "./world-builder.ts";
-import { getRunningProcesses, ProcSampler } from "./proc.ts";
-import { FileActivitySampler } from "./activity.ts";
 import { loadCache, saveCache } from "./persistence.ts";
 import { TerminalManager, type TermClient } from "./terminals.ts";
 import type { World } from "../shared/types.ts";
+import type { AgentSnapshot, FileActivity } from "../shared/proc-types.ts";
 
 const PORT = Number(process.env.TTY_API_PORT ?? 3001);
 const TICK_MS = 1000;
 const WORK_DIR_TTL_MS = 15000;
+const ACTIVITY_TTL_MS = 6000;
 const CACHE_PATH =
   process.env.ISOTOP_CACHE ?? join(process.cwd(), ".isotop-cache.json");
+const INGEST_TOKEN = process.env.AISO_TOKEN ?? randomUUID();
 
 const placements = await loadCache(CACHE_PATH);
 const workDirLastActive = new Map<string, number>();
 const knownTerminals = new Set<string>();
-const sampler = new ProcSampler();
-const activitySampler = new FileActivitySampler();
-const terminals = new TerminalManager();
 const liveClients = new Set<WebSocket>();
+let worldDirty = false;
 
-// A terminal island is labelled with the shell's current working directory.
+const terminals = new TerminalManager({
+  url: `http://127.0.0.1:${PORT}/ingest`,
+  token: INGEST_TOKEN,
+});
+
+// One robot's worth of state, built from adapter events rather than /proc.
+type Agent = {
+  id: string;
+  terminal: string;
+  kind: "agent" | "subagent";
+  parent: string | null;
+  tool: string;
+  label: string;
+  activity: FileActivity | null;
+  activityTs: number;
+};
+const agents = new Map<string, Agent>();
+
+function subId(session: string, agentId: unknown): string {
+  return `${session}:sub:${agentId ?? "anon"}`;
+}
+
+function ensureAgent(session: string): Agent {
+  let a = agents.get(session);
+  if (!a) {
+    a = {
+      id: session,
+      terminal: session,
+      kind: "agent",
+      parent: null,
+      tool: "claude",
+      label: "claude",
+      activity: null,
+      activityTs: 0,
+    };
+    agents.set(session, a);
+  }
+  return a;
+}
+
+function removeSession(session: string): void {
+  for (const [id, a] of agents) {
+    if (a.terminal === session) agents.delete(id);
+  }
+}
+
+function touchWorkDir(dir: string, now: number): void {
+  if (!workDirLastActive.has(dir)) worldDirty = true;
+  workDirLastActive.set(dir, now);
+}
+
+// Normalize a Claude Code hook payload into agent/world state. The terminal
+// island id arrives out of band in the X-Aiso-Session header.
+type ClaudeHook = {
+  hook_event_name?: string;
+  tool_name?: string;
+  tool_input?: { file_path?: unknown; command?: unknown };
+  agent_id?: unknown;
+  agent_type?: unknown;
+};
+
+function ingestClaude(session: string, body: ClaudeHook): void {
+  const now = Date.now();
+  switch (body.hook_event_name) {
+    case "SessionStart":
+      ensureAgent(session);
+      return;
+    case "SessionEnd":
+    case "Stop":
+      removeSession(session);
+      worldDirty = true;
+      return;
+    case "SubagentStart": {
+      const id = subId(session, body.agent_id);
+      agents.set(id, {
+        id,
+        terminal: session,
+        kind: "subagent",
+        parent: session,
+        tool: "claude",
+        label: typeof body.agent_type === "string" ? body.agent_type : "subagent",
+        activity: null,
+        activityTs: 0,
+      });
+      return;
+    }
+    case "SubagentStop":
+      agents.delete(subId(session, body.agent_id));
+      return;
+    case "PreToolUse":
+    case "PostToolUse": {
+      const id = body.agent_id ? subId(session, body.agent_id) : session;
+      const agent = agents.get(id) ?? ensureAgent(session);
+      const file = body.tool_input?.file_path;
+      if (typeof file === "string" && file.startsWith("/")) {
+        agent.activity = {
+          path: file,
+          dir: dirname(file),
+          direction: body.tool_name === "Read" ? "read" : "write",
+        };
+        agent.activityTs = now;
+        touchWorkDir(agent.activity.dir, now);
+      }
+      return;
+    }
+    default:
+      return;
+  }
+}
+
 async function terminalInfos(): Promise<TerminalInfo[]> {
   return Promise.all(
     terminals.refs().map(async ({ id, pid }) => {
@@ -45,10 +154,42 @@ async function buildWorldFor(): Promise<World> {
   return world;
 }
 
+function agentSnapshots(): AgentSnapshot[] {
+  return [...agents.values()].map((a) => ({
+    id: a.id,
+    terminal: a.terminal,
+    kind: a.kind,
+    parent: a.parent,
+    tool: a.tool,
+    label: a.label,
+    activity: a.activity,
+  }));
+}
+
+function broadcast(message: string): void {
+  for (const ws of liveClients) {
+    if (ws.readyState === ws.OPEN) ws.send(message);
+  }
+}
+
+function broadcastAgents(): void {
+  broadcast(
+    JSON.stringify({
+      kind: "agents",
+      capturedAt: Date.now(),
+      agents: agentSnapshots(),
+    }),
+  );
+}
+
+async function broadcastWorld(): Promise<void> {
+  const world = await buildWorldFor();
+  broadcast(JSON.stringify({ kind: "world-delta", regions: world.regions }));
+}
+
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
-  const payload = JSON.stringify(body);
   res.writeHead(status, { "content-type": "application/json" });
-  res.end(payload);
+  res.end(JSON.stringify(body));
 }
 
 async function readBody(req: IncomingMessage): Promise<unknown> {
@@ -58,12 +199,6 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-function broadcast(message: string): void {
-  for (const ws of liveClients) {
-    if (ws.readyState === ws.OPEN) ws.send(message);
-  }
-}
-
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? "/", "http://localhost");
   const { pathname } = url;
@@ -71,6 +206,25 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 
   if (pathname === "/health") {
     return sendJson(res, 200, { status: "ok" });
+  }
+
+  if (pathname === "/ingest" && method === "POST") {
+    if (req.headers["authorization"] !== `Bearer ${INGEST_TOKEN}`) {
+      return sendJson(res, 401, { ok: false });
+    }
+    const session = String(req.headers["x-aiso-session"] ?? "");
+    let body: ClaudeHook = {};
+    try {
+      body = (await readBody(req)) as ClaudeHook;
+    } catch {
+      /* ignore malformed */
+    }
+    if (session) {
+      ingestClaude(session, body);
+      broadcastAgents();
+    }
+    // Ack immediately; hooks are synchronous and must not block the agent.
+    return sendJson(res, 200, {});
   }
 
   if (pathname === "/term/new" && method === "POST") {
@@ -99,37 +253,9 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   }
 
   if (pathname === "/world") {
-    const started = performance.now();
     const world = await buildWorldFor();
-    const elapsedMs = Math.round(performance.now() - started);
-    console.log(
-      `[world] ${world.regions.length} islands in ${elapsedMs}ms`,
-    );
+    console.log(`[world] ${world.regions.length} islands`);
     return sendJson(res, 200, world);
-  }
-
-  if (pathname === "/procs") {
-    const processes = await getRunningProcesses("/proc", terminals.refs());
-    return sendJson(res, 200, { capturedAt: Date.now(), processes });
-  }
-
-  if (pathname === "/kill" && method === "POST") {
-    let pid: number;
-    try {
-      pid = Number((await readBody(req) as { pid?: unknown }).pid);
-    } catch {
-      return sendJson(res, 400, { ok: false, error: "bad request" });
-    }
-    if (!Number.isInteger(pid) || pid <= 1) {
-      return sendJson(res, 400, { ok: false, error: "invalid pid" });
-    }
-    try {
-      process.kill(pid, "SIGTERM");
-      console.log(`[kill] sent SIGTERM to ${pid}`);
-      return sendJson(res, 200, { ok: true, pid });
-    } catch (err) {
-      return sendJson(res, 400, { ok: false, error: (err as Error).message });
-    }
   }
 
   res.writeHead(404, { "content-type": "text/plain" });
@@ -193,63 +319,43 @@ httpServer.on("upgrade", (req, socket, head) => {
 
 httpServer.listen(PORT, () => {
   console.log(`[server] listening on http://localhost:${PORT}`);
-  console.log(`[server] islands = your terminals and the folders their agents touch`);
+  console.log(`[server] map is driven by agent events at POST /ingest`);
 });
 
-setInterval(async () => {
+setInterval(() => {
   if (liveClients.size === 0) return;
-  try {
-    const processes = await sampler.sample("/proc", terminals.refs());
-    const activity = await activitySampler.sample(processes.map((p) => p.pid));
-    for (const p of processes) p.activity = activity.get(p.pid) ?? null;
+  const now = Date.now();
 
-    broadcast(
-      JSON.stringify({ kind: "procs", capturedAt: Date.now(), processes }),
-    );
-
-    const now = Date.now();
-    const freshWorkDirs: string[] = [];
-    for (const a of activity.values()) {
-      if (!workDirLastActive.has(a.dir)) freshWorkDirs.push(a.dir);
-      workDirLastActive.set(a.dir, now);
+  for (const [dir, last] of workDirLastActive) {
+    if (now - last > WORK_DIR_TTL_MS) {
+      workDirLastActive.delete(dir);
+      releaseRegion(placements, dir);
+      worldDirty = true;
     }
-    const expiredWorkDirs: string[] = [];
-    for (const [dir, last] of workDirLastActive) {
-      if (now - last > WORK_DIR_TTL_MS) {
-        workDirLastActive.delete(dir);
-        releaseRegion(placements, dir);
-        expiredWorkDirs.push(dir);
-      }
-    }
-
-    const liveTerms = new Set(terminals.list());
-    const freshTerms = [...liveTerms].filter((id) => !knownTerminals.has(id));
-    const goneTerms = [...knownTerminals].filter((id) => !liveTerms.has(id));
-    for (const id of goneTerms) {
-      knownTerminals.delete(id);
-      releaseRegion(placements, id);
-    }
-    for (const id of freshTerms) knownTerminals.add(id);
-
-    const worldChanged =
-      freshTerms.length > 0 ||
-      goneTerms.length > 0 ||
-      freshWorkDirs.length > 0 ||
-      expiredWorkDirs.length > 0;
-    if (worldChanged) {
-      const world = await buildWorldFor();
-      broadcast(
-        JSON.stringify({
-          kind: "world-delta",
-          buildings: [],
-          regions: world.regions,
-        }),
-      );
-      console.log(
-        `[ws] world-delta: +${freshTerms.length}/-${goneTerms.length} terminals, +${freshWorkDirs.length}/-${expiredWorkDirs.length} work dirs, ${world.regions.length} islands`,
-      );
-    }
-  } catch (err) {
-    console.warn(`[tick] failed: ${(err as Error).message}`);
   }
+  for (const a of agents.values()) {
+    if (a.activity && now - a.activityTs > ACTIVITY_TTL_MS) a.activity = null;
+  }
+
+  const liveTerms = new Set(terminals.list());
+  for (const id of liveTerms) {
+    if (!knownTerminals.has(id)) {
+      knownTerminals.add(id);
+      worldDirty = true;
+    }
+  }
+  for (const id of [...knownTerminals]) {
+    if (!liveTerms.has(id)) {
+      knownTerminals.delete(id);
+      removeSession(id);
+      releaseRegion(placements, id);
+      worldDirty = true;
+    }
+  }
+
+  if (worldDirty) {
+    worldDirty = false;
+    void broadcastWorld();
+  }
+  broadcastAgents();
 }, TICK_MS);

@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import type { Region } from "../shared/types.ts";
-import type { LiveMessage, ProcessSnapshot } from "../shared/proc-types.ts";
+import type { AgentSnapshot, LiveMessage } from "../shared/proc-types.ts";
 import { liveSocketUrl } from "./api.ts";
 import { Sidebar, SIDEBAR_FRACTION } from "./sidebar.ts";
 import { TerminalsUI } from "./terminals.ts";
@@ -13,11 +13,11 @@ import {
 } from "./ground.ts";
 import { TILE_H, tileToScreen } from "./iso.ts";
 import {
-  NAMED_ROBOTS,
   ROBOT_COLS,
   ROBOT_FRAME_H,
   ROBOT_FRAME_W,
   ROBOT_KEYS,
+  NAMED_ROBOTS,
   SHEET_ROW_DIRS,
   WANDER_OFFSETS,
   headingFromScreen,
@@ -42,13 +42,9 @@ const WS_RECONNECT_MS = 2000;
 const WANDER_MIN_MS = 1500;
 const WANDER_MAX_MS = 3500;
 const WANDER_STAGGER_MS = 2000;
-const BAR_W = 26;
-const BAR_H = 3;
-const BAR_TRACK_COLOR = 0x14141e;
-const MEM_BAR_COLOR = 0x4aa6ff;
-const MEM_BAR_FULL = 0.2;
 const COMMUTE_MS = 1400;
 const WORK_MS = 1800;
+const SUBAGENT_SCALE = 0.66;
 const READ_COLOR = "#6bd6ff";
 const WRITE_COLOR = "#ffae5a";
 
@@ -56,13 +52,12 @@ type NpcState = {
   container: Phaser.GameObjects.Container;
   mech: Phaser.GameObjects.Sprite;
   robotTex: string;
+  baseScale: number;
   heading: (typeof SHEET_ROW_DIRS)[number];
-  cpuFill: Phaser.GameObjects.Rectangle;
-  memFill: Phaser.GameObjects.Rectangle;
   badge: Phaser.GameObjects.Text;
   homeTile: { x: number; y: number };
   currentTile: { x: number; y: number };
-  latest: ProcessSnapshot;
+  latest: AgentSnapshot;
   busy: boolean;
   workingDir: string | null;
   tripId: number;
@@ -75,14 +70,11 @@ function formatRegionLabel(path: string): string {
   return home.length > 40 ? `…${home.slice(-39)}` : home;
 }
 
-function clamp01(n: number): number {
-  return n < 0 ? 0 : n > 1 ? 1 : n;
-}
-
-function cpuBarColor(cpu: number): number {
-  if (cpu < 0.5) return 0x4ad66a;
-  if (cpu < 0.8) return 0xe0c84a;
-  return 0xe05a4a;
+// Stable small integer from an agent id, for the home-tile slot and art pick.
+function hashId(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return Math.abs(h);
 }
 
 function robotAssetUrl(key: RobotKey): string {
@@ -95,7 +87,7 @@ function robotAssetUrl(key: RobotKey): string {
 export class CityScene extends Phaser.Scene {
   private regions: Region[] = [];
   private regionByPath = new Map<string, Region>();
-  private npcs = new Map<number, NpcState>();
+  private npcs = new Map<string, NpcState>();
   private sidesGraphics: Phaser.GameObjects.Graphics | null = null;
   private linksGraphics: Phaser.GameObjects.Graphics | null = null;
   private topGraphics: Phaser.GameObjects.Graphics | null = null;
@@ -272,18 +264,18 @@ export class CityScene extends Phaser.Scene {
     }
   }
 
-  // A cable from each terminal island to every folder island its processes
-  // are currently touching.
-  private drawCables(processes: ProcessSnapshot[]) {
+  // A cable from each terminal island to every folder island an agent on it
+  // is currently working in.
+  private drawCables(agents: AgentSnapshot[]) {
     if (!this.linksGraphics) return;
     this.linksGraphics.clear();
     const drawn = new Set<string>();
-    for (const p of processes) {
-      if (!p.terminal || !p.activity) continue;
-      const key = `${p.terminal}->${p.activity.dir}`;
+    for (const a of agents) {
+      if (!a.terminal || !a.activity) continue;
+      const key = `${a.terminal}->${a.activity.dir}`;
       if (drawn.has(key)) continue;
-      const term = this.regionByPath.get(p.terminal);
-      const work = this.regionByPath.get(p.activity.dir);
+      const term = this.regionByPath.get(a.terminal);
+      const work = this.regionByPath.get(a.activity.dir);
       if (!term || !work) continue;
       drawn.add(key);
       drawCable(this.linksGraphics, regionCenter(term), regionCenter(work));
@@ -302,13 +294,13 @@ export class CityScene extends Phaser.Scene {
           console.warn(`[ws] bad message: ${(err as Error).message}`);
           return;
         }
-        if (msg.kind === "procs") {
-          this.updateNpcs(msg.processes);
-          if (msg.processes.length !== lastCount) {
+        if (msg.kind === "agents") {
+          this.updateNpcs(msg.agents);
+          if (msg.agents.length !== lastCount) {
             console.log(
-              `[ws] procs: ${msg.processes.length} processes, ${this.npcs.size} npcs on screen`,
+              `[ws] agents: ${msg.agents.length}, ${this.npcs.size} robots on screen`,
             );
-            lastCount = msg.processes.length;
+            lastCount = msg.agents.length;
           }
         } else if (msg.kind === "world-delta") {
           this.regions = msg.regions;
@@ -327,70 +319,62 @@ export class CityScene extends Phaser.Scene {
     connect();
   }
 
-  updateNpcs(processes: ProcessSnapshot[]) {
-    const seen = new Set<number>();
-    for (const p of processes) {
-      seen.add(p.pid);
-      const existing = this.npcs.get(p.pid);
+  updateNpcs(agents: AgentSnapshot[]) {
+    const seen = new Set<string>();
+    for (const a of agents) {
+      seen.add(a.id);
+      const existing = this.npcs.get(a.id);
       if (existing) {
-        this.applyUsage(existing, p);
+        existing.latest = a;
         this.handleActivity(existing);
         continue;
       }
-      const home = p.terminal ? this.regionByPath.get(p.terminal) : undefined;
+      const home = a.terminal ? this.regionByPath.get(a.terminal) : undefined;
       if (!home) continue;
-      const state = this.createNpc(p, home);
-      this.npcs.set(p.pid, state);
+      const state = this.createNpc(a, home);
+      this.npcs.set(a.id, state);
       this.scheduleWander(state);
       this.handleActivity(state);
     }
-    for (const [pid, state] of this.npcs) {
-      if (!seen.has(pid)) {
+    for (const [id, state] of this.npcs) {
+      if (!seen.has(id)) {
         state.container.destroy();
-        this.npcs.delete(pid);
+        this.npcs.delete(id);
       }
     }
-    this.drawCables(processes);
+    this.drawCables(agents);
   }
 
-  private createNpc(p: ProcessSnapshot, home: Region): NpcState {
-    const spawn = npcHome(p.pid, home);
-    const robotTex = robotTextureKey(robotForExe(p.exe, p.pid));
-    const mech = this.add.sprite(0, 0, robotTex).setOrigin(0.5, 1);
+  private createNpc(a: AgentSnapshot, home: Region): NpcState {
+    const hid = hashId(a.id);
+    const spawn = npcHome(hid, home);
+    const robotTex = robotTextureKey(robotForExe(a.tool, hid));
+    const baseScale = a.kind === "subagent" ? SUBAGENT_SCALE : 1;
+    const mech = this.add
+      .sprite(0, 0, robotTex)
+      .setOrigin(0.5, 1)
+      .setScale(baseScale);
     mech.setFrame(rowForHeading("S") * ROBOT_COLS);
     mech.setInteractive({ pixelPerfect: true });
-    mech.on("pointerover", () => this.showProcTooltip(state.latest));
+    mech.on("pointerover", () => this.showAgentTooltip(state.latest));
     mech.on("pointerout", () => this.hideTooltip());
 
     const top = -mech.displayHeight;
-    const left = -BAR_W / 2;
-    const cpuTrack = this.add
-      .rectangle(left, top - 6, BAR_W, BAR_H, BAR_TRACK_COLOR)
-      .setOrigin(0, 0.5);
-    const cpuFill = this.add
-      .rectangle(left, top - 6, BAR_W, BAR_H, cpuBarColor(p.cpu))
-      .setOrigin(0, 0.5);
-    const memTrack = this.add
-      .rectangle(left, top - 11, BAR_W, BAR_H, BAR_TRACK_COLOR)
-      .setOrigin(0, 0.5);
-    const memFill = this.add
-      .rectangle(left, top - 11, BAR_W, BAR_H, MEM_BAR_COLOR)
-      .setOrigin(0, 0.5);
     const label = this.add
-      .text(0, top - 14, p.comm, {
+      .text(0, top - 4, a.label, {
         fontFamily: "ui-monospace, monospace",
         fontSize: "10px",
-        color: "#e6e6f2",
-        stroke: "#0a0a12",
+        color: "#ffe0ee",
+        stroke: "#1a0f16",
         strokeThickness: 3,
       })
       .setOrigin(0.5, 1);
     const badge = this.add
-      .text(0, top - 24, "", {
+      .text(0, top - 16, "", {
         fontFamily: "ui-monospace, monospace",
         fontSize: "10px",
         color: READ_COLOR,
-        stroke: "#0a0a12",
+        stroke: "#1a0f16",
         strokeThickness: 3,
       })
       .setOrigin(0.5, 1)
@@ -398,10 +382,6 @@ export class CityScene extends Phaser.Scene {
 
     const container = this.add.container(spawn.screen.x, spawn.screen.y, [
       mech,
-      cpuTrack,
-      cpuFill,
-      memTrack,
-      memFill,
       label,
       badge,
     ]);
@@ -411,26 +391,17 @@ export class CityScene extends Phaser.Scene {
       container,
       mech,
       robotTex,
+      baseScale,
       heading: "S",
-      cpuFill,
-      memFill,
       badge,
       homeTile: spawn.tile,
       currentTile: spawn.tile,
-      latest: p,
+      latest: a,
       busy: false,
       workingDir: null,
       tripId: 0,
     };
-    this.applyUsage(state, p);
     return state;
-  }
-
-  private applyUsage(state: NpcState, p: ProcessSnapshot) {
-    state.latest = p;
-    state.cpuFill.displayWidth = BAR_W * clamp01(p.cpu);
-    state.cpuFill.fillColor = cpuBarColor(p.cpu);
-    state.memFill.displayWidth = BAR_W * clamp01(p.mem / MEM_BAR_FULL);
   }
 
   private npcScreen(tile: { x: number; y: number }) {
@@ -514,7 +485,7 @@ export class CityScene extends Phaser.Scene {
     this.standStill(state);
     this.tweens.add({
       targets: state.mech,
-      scaleY: 0.9,
+      scaleY: state.baseScale * 0.9,
       duration: WORK_MS / 6,
       ease: "Sine.easeInOut",
       yoyo: true,
@@ -529,7 +500,7 @@ export class CityScene extends Phaser.Scene {
       state.workingDir = null;
       state.badge.setVisible(false);
       this.tweens.killTweensOf(state.mech);
-      state.mech.setScale(1);
+      state.mech.setScale(state.baseScale);
       this.wanderOnce(state);
     });
   }
@@ -595,11 +566,13 @@ export class CityScene extends Phaser.Scene {
     return el;
   }
 
-  private showProcTooltip(p: ProcessSnapshot) {
+  private showAgentTooltip(a: AgentSnapshot) {
     if (this.dragging || !this.tooltip) return;
-    const cpu = `${(p.cpu * 100).toFixed(0)}%`;
-    const mem = `${(p.mem * 100).toFixed(1)}%`;
-    this.tooltip.textContent = `pid:  ${p.pid}\ncomm: ${p.comm}\ncpu:  ${cpu} of one core\nmem:  ${mem} of RAM\nexe:  ${p.exe}`;
+    const role = a.kind === "subagent" ? "subagent" : "agent";
+    const doing = a.activity
+      ? `${a.activity.direction}: ${a.activity.dir}`
+      : "idle";
+    this.tooltip.textContent = `${a.label} (${role})\ntool: ${a.tool}\n${doing}`;
     this.tooltip.style.display = "block";
   }
 

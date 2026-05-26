@@ -13,7 +13,13 @@ class Terminal {
   private buffer = "";
   private clients = new Set<TermClient>();
 
-  constructor(id: string, cols: number, rows: number, onExit: () => void) {
+  constructor(
+    id: string,
+    cols: number,
+    rows: number,
+    extraEnv: Record<string, string>,
+    onExit: () => void,
+  ) {
     this.id = id;
     const shell = process.env.SHELL ?? "bash";
     this.proc = pty.spawn(shell, ["-i"], {
@@ -21,7 +27,7 @@ class Terminal {
       cols,
       rows,
       cwd: process.env.HOME ?? process.cwd(),
-      env: process.env as Record<string, string>,
+      env: { ...(process.env as Record<string, string>), ...extraEnv },
     });
     this.pid = this.proc.pid;
     this.proc.onData((data) => {
@@ -57,15 +63,29 @@ class Terminal {
   }
 }
 
+export type IngestConfig = { url: string; token: string };
+
 export class TerminalManager {
   private terminals = new Map<string, Terminal>();
   private seq = 0;
+  private ingest: IngestConfig;
+
+  constructor(ingest: IngestConfig) {
+    this.ingest = ingest;
+  }
 
   create(cols = DEFAULT_COLS, rows = DEFAULT_ROWS): string {
     const id = `t${++this.seq}`;
+    // The agent's adapter reads these to tag its events with this island and
+    // reach the ingest endpoint.
+    const env = {
+      AISO_SESSION: id,
+      AISO_INGEST: this.ingest.url,
+      AISO_TOKEN: this.ingest.token,
+    };
     this.terminals.set(
       id,
-      new Terminal(id, cols, rows, () => this.terminals.delete(id)),
+      new Terminal(id, cols, rows, env, () => this.terminals.delete(id)),
     );
     return id;
   }

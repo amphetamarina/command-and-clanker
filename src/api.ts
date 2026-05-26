@@ -1,8 +1,6 @@
-import type { BuildingDescriptor, Region } from "../shared/types.ts";
-import type { ProcsResponse } from "../shared/proc-types.ts";
+import type { Region } from "../shared/types.ts";
 
 export type WorldResponse = {
-  buildings: BuildingDescriptor[];
   regions: Region[];
 };
 
@@ -12,27 +10,6 @@ export async function fetchWorld(): Promise<WorldResponse> {
     throw new Error(`/world responded ${res.status}`);
   }
   return (await res.json()) as WorldResponse;
-}
-
-export async function fetchProcs(): Promise<ProcsResponse> {
-  const res = await fetch("/procs");
-  if (!res.ok) {
-    throw new Error(`/procs responded ${res.status}`);
-  }
-  return (await res.json()) as ProcsResponse;
-}
-
-export async function killProcess(pid: number): Promise<boolean> {
-  try {
-    const res = await fetch("/kill", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ pid }),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
 }
 
 const DEFAULT_API_PORT = 3001;

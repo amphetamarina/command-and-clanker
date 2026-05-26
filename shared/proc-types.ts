@@ -1,4 +1,4 @@
-import type { BuildingDescriptor, Region } from "./types.ts";
+import type { Region } from "./types.ts";
 
 export type FileActivity = {
   path: string;
@@ -6,31 +6,25 @@ export type FileActivity = {
   direction: "read" | "write";
 };
 
-export type ProcessSnapshot = {
-  pid: number;
-  ppid: number;
-  // The id of the in-app terminal this process descends from, or null.
-  terminal: string | null;
-  exe: string;
-  comm: string;
-  cpu: number;
-  mem: number;
-  activity: FileActivity | null;
-};
-
-export type ProcsResponse = {
-  capturedAt: number;
-  processes: ProcessSnapshot[];
+// One robot on the map: an agent (or one of its subagents) reported by an
+// in-terminal adapter, not scraped from /proc.
+export type AgentSnapshot = {
+  id: string; // stable per agent/subagent (e.g. terminal id, or "t1:sub:<x>")
+  terminal: string | null; // the terminal island it lives on
+  kind: "agent" | "subagent";
+  parent: string | null;
+  tool: string; // robot art source: "claude" | "opencode" | ...
+  label: string; // display label
+  activity: FileActivity | null; // the folder it is currently working in
 };
 
 export type LiveMessage =
   | {
-      kind: "procs";
+      kind: "agents";
       capturedAt: number;
-      processes: ProcessSnapshot[];
+      agents: AgentSnapshot[];
     }
   | {
       kind: "world-delta";
-      buildings: BuildingDescriptor[];
       regions: Region[];
     };
