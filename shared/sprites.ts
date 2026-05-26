@@ -13,6 +13,7 @@ export type BuildingVariant = (typeof BUILDING_VARIANTS)[number];
 export const TOOL_NAMES = [
   "bun",
   "claude",
+  "codex",
   "hermes",
   "nodejs",
   "opencode",
@@ -40,6 +41,7 @@ export const TOOL_SPRITE_KEYS: readonly ToolSpriteKey[] = TOOL_NAMES.map(
 const TOOL_BY_BASENAME: Record<string, ToolName> = {
   bun: "bun",
   claude: "claude",
+  codex: "codex",
   hermes: "hermes",
   node: "nodejs",
   nodejs: "nodejs",
@@ -49,6 +51,7 @@ const TOOL_BY_BASENAME: Record<string, ToolName> = {
 
 const TOOL_BY_KEYWORD: ReadonlyArray<readonly [string, ToolName]> = [
   ["/claude/", "claude"],
+  ["/codex/", "codex"],
   ["opencode", "opencode"],
   ["hermes", "hermes"],
 ];
