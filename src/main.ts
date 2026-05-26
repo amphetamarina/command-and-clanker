@@ -24,7 +24,7 @@ try {
   const game = new Phaser.Game({
     type: Phaser.AUTO,
     parent: "app",
-    backgroundColor: "#1a121b",
+    transparent: true,
     pixelArt: true,
     scale: {
       mode: Phaser.Scale.RESIZE,

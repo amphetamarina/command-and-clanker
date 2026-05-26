@@ -10,10 +10,10 @@ const SIDE_RIGHT = 0x281a24;
 const EDGE_HI = 0xf6d8e6;
 const BORDER = 0xe7c2d2;
 // Panel surfaces: a soft rose for plain folders, brighter for active ones.
-const PANEL_NORMAL = 0xc79cb0;
-const PANEL_WORK = 0xe6b1ca;
-const GRID_LIGHT = 0xffffff;
-const GRID_DARK = 0x7c5165;
+const PANEL_NORMAL = 0xcb9fb4;
+const PANEL_WORK = 0xe8b4cd;
+const GRID_LINE = 0x5e3245;
+const GRID_HI = 0xf6dbe7;
 
 type Pt = { x: number; y: number };
 
@@ -52,8 +52,8 @@ function parentOf(r: Region, regions: Region[]): Region | null {
   return best;
 }
 
-const LINK_BASE = 0x2a1a24;
-const LINK_CORE = 0x6e4256;
+const LINK_BASE = 0x140c12;
+const LINK_CORE = 0xab6982;
 
 // EXAPUNKS-style cables linking each island to its parent folder. Drawn below
 // the island tops so they slip under the edges and only show across the gaps.
@@ -95,19 +95,21 @@ export function drawIslandTop(g: Phaser.GameObjects.Graphics, r: Region): void {
   const gridLine = (a: Pt, b: Pt) => {
     g.lineBetween(a.x, a.y, b.x, b.y);
   };
-  g.lineStyle(1, GRID_DARK, 0.35);
+  // A bright lower-right shadow under each grid line plus the line itself,
+  // so the cells read as crisply embossed squares.
+  g.lineStyle(1, GRID_HI, 0.22);
+  for (let i = 1; i < w; i++) {
+    gridLine(tileToScreen(ox + i, oy + 0.06), tileToScreen(ox + i, oy + h + 0.06));
+  }
+  for (let j = 1; j < h; j++) {
+    gridLine(tileToScreen(ox, oy + j + 0.06), tileToScreen(ox + w, oy + j + 0.06));
+  }
+  g.lineStyle(1, GRID_LINE, 0.7);
   for (let i = 1; i < w; i++) {
     gridLine(tileToScreen(ox + i, oy), tileToScreen(ox + i, oy + h));
   }
   for (let j = 1; j < h; j++) {
     gridLine(tileToScreen(ox, oy + j), tileToScreen(ox + w, oy + j));
-  }
-  g.lineStyle(1, GRID_LIGHT, 0.08);
-  for (let i = 1; i < w; i++) {
-    gridLine(
-      tileToScreen(ox + i, oy + 0.04),
-      tileToScreen(ox + i, oy + h + 0.04),
-    );
   }
 }
 
