@@ -1,10 +1,11 @@
 import seedrandom from "seedrandom";
 import type { Region, World } from "../shared/types.ts";
 
-// Every island is a fixed square; terminals are a touch bigger so several
-// agent robots fit. A uniform stride keeps the meta-grid simple and gap-free.
-const TERMINAL_SIZE = 6;
-const WORK_SIZE = 4;
+// Every island is a fixed square. Terminal islands are compact hosts (a
+// terminal sits at their centre); work folders are a touch larger. A uniform
+// stride keeps the meta-grid simple and gap-free.
+const TERMINAL_SIZE = 4;
+const WORK_SIZE = 5;
 const REGION_GUTTER = 2;
 const STRIDE = Math.max(TERMINAL_SIZE, WORK_SIZE) + REGION_GUTTER;
 

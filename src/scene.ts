@@ -101,6 +101,7 @@ export class CityScene extends Phaser.Scene {
   private topGraphics: Phaser.GameObjects.Graphics | null = null;
   private edgesGraphics: Phaser.GameObjects.Graphics | null = null;
   private regionLabels: Phaser.GameObjects.Text[] = [];
+  private terminalIcons: Phaser.GameObjects.Sprite[] = [];
   private tooltip: HTMLDivElement | null = null;
   private dragging = false;
   private sidebar: Sidebar | null = null;
@@ -121,6 +122,11 @@ export class CityScene extends Phaser.Scene {
         frameHeight: ROBOT_FRAME_H,
       });
     }
+    this.load.spritesheet(
+      "icon/terminal-flash",
+      "/isotop-assets/sci-fi/icons/Spritesheets/terminal-typing-flash-8frame.png",
+      { frameWidth: 128, frameHeight: 128 },
+    );
   }
 
   create() {
@@ -128,6 +134,7 @@ export class CityScene extends Phaser.Scene {
     this.scale.on("resize", () => this.applyCameraViewport());
 
     this.createRobotAnims();
+    this.createTerminalAnim();
     this.sidesGraphics = this.add.graphics().setDepth(GROUND_DEPTH);
     this.linksGraphics = this.add.graphics().setDepth(LINK_DEPTH);
     this.topGraphics = this.add.graphics().setDepth(TOP_DEPTH);
@@ -202,6 +209,18 @@ export class CityScene extends Phaser.Scene {
     }
   }
 
+  private createTerminalAnim() {
+    this.anims.create({
+      key: "terminal-flash",
+      frames: this.anims.generateFrameNumbers("icon/terminal-flash", {
+        start: 0,
+        end: 7,
+      }),
+      frameRate: 6,
+      repeat: -1,
+    });
+  }
+
   private renderRegions() {
     if (
       !this.sidesGraphics ||
@@ -215,7 +234,9 @@ export class CityScene extends Phaser.Scene {
     this.topGraphics.clear();
     this.edgesGraphics.clear();
     for (const label of this.regionLabels) label.destroy();
+    for (const icon of this.terminalIcons) icon.destroy();
     this.regionLabels = [];
+    this.terminalIcons = [];
     this.regionByPath = new Map(this.regions.map((r) => [r.path, r]));
 
     const ordered = [...this.regions].sort(
@@ -227,6 +248,16 @@ export class CityScene extends Phaser.Scene {
       drawIslandEdges(this.edgesGraphics, r);
 
       const isTerminal = r.kind === "terminal";
+      if (isTerminal) {
+        const c = regionCenter(r);
+        const sum = r.origin.x + r.size.w / 2 + (r.origin.y + r.size.h / 2);
+        const icon = this.add
+          .sprite(c.x, c.y, "icon/terminal-flash")
+          .setOrigin(0.5, 0.82)
+          .setDepth(sum);
+        icon.play("terminal-flash");
+        this.terminalIcons.push(icon);
+      }
       const corner = tileToScreen(r.origin.x, r.origin.y);
       const label = this.add
         .text(corner.x, corner.y - 4, formatRegionLabel(r.label), {
