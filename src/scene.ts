@@ -14,8 +14,7 @@ import {
   drawIslandSides,
   drawIslandEdges,
   drawIslandLinks,
-  paintIslandTop,
-  FLOOR_COUNT,
+  drawIslandTop,
 } from "./ground.ts";
 import { TILE_H, tileToScreen } from "./iso.ts";
 import {
@@ -36,14 +35,11 @@ import {
 
 const GROUND_DEPTH = -20;
 const LINK_DEPTH = -19.5;
-const FLOOR_DEPTH = -19;
+const TOP_DEPTH = -19;
 const EDGE_DEPTH = -18;
 const LABEL_DEPTH = 100000;
-const STATION_KEYS = Array.from(
-  { length: FLOOR_COUNT },
-  (_, i) => `floor/station/${i + 1}`,
-);
-const WORK_LABEL_COLOR = "#7fe0d0";
+const WORK_LABEL_COLOR = "#ffd0e6";
+const NORMAL_LABEL_COLOR = "#ecc8d8";
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 4;
 const ZOOM_STEP = 0.15;
@@ -101,23 +97,6 @@ function cpuBarColor(cpu: number): number {
   return 0xe05a4a;
 }
 
-function brightenTint(tint: number, amount: number): number {
-  const mix = (channel: number) =>
-    Math.round(channel + (255 - channel) * amount);
-  const r = mix((tint >> 16) & 0xff);
-  const g = mix((tint >> 8) & 0xff);
-  const b = mix(tint & 0xff);
-  return (r << 16) | (g << 8) | b;
-}
-
-function hexColor(value: number): string {
-  return `#${value.toString(16).padStart(6, "0")}`;
-}
-
-function labelColor(tint: number): string {
-  return hexColor(brightenTint(tint, 0.55));
-}
-
 function buildingAssetUrl(key: BuildingSpriteKey): string {
   const parts = key.split("/");
   if (parts[0] === "tool") {
@@ -136,11 +115,6 @@ function robotAssetUrl(key: RobotKey): string {
   return `/isotop-assets/sci-fi/units/Mech/Spritesheets/${key}-8dir-walk-hover.png`;
 }
 
-function terrainAssetUrl(index: number): string {
-  const n = index.toString().padStart(2, "0");
-  return `/isotop-assets/sci-fi/terrain/station/floor-${n}.png`;
-}
-
 export class CityScene extends Phaser.Scene {
   private buildings: BuildingDescriptor[] = [];
   private regions: Region[] = [];
@@ -149,8 +123,8 @@ export class CityScene extends Phaser.Scene {
   private npcs = new Map<number, NpcState>();
   private sidesGraphics: Phaser.GameObjects.Graphics | null = null;
   private linksGraphics: Phaser.GameObjects.Graphics | null = null;
+  private topGraphics: Phaser.GameObjects.Graphics | null = null;
   private edgesGraphics: Phaser.GameObjects.Graphics | null = null;
-  private groundBlitters = new Map<string, Phaser.GameObjects.Blitter>();
   private regionLabels: Phaser.GameObjects.Text[] = [];
   private tooltip: HTMLDivElement | null = null;
   private dragging = false;
@@ -188,9 +162,6 @@ export class CityScene extends Phaser.Scene {
         frameHeight: ROBOT_FRAME_H,
       });
     }
-    for (let i = 0; i < FLOOR_COUNT; i++) {
-      this.load.image(STATION_KEYS[i]!, terrainAssetUrl(i + 1));
-    }
     this.load.image("icon/terminal", "/isotop-assets/sci-fi/icons/terminal.png");
   }
 
@@ -205,6 +176,7 @@ export class CityScene extends Phaser.Scene {
     this.createRobotAnims();
     this.sidesGraphics = this.add.graphics().setDepth(GROUND_DEPTH);
     this.linksGraphics = this.add.graphics().setDepth(LINK_DEPTH);
+    this.topGraphics = this.add.graphics().setDepth(TOP_DEPTH);
     this.edgesGraphics = this.add.graphics().setDepth(EDGE_DEPTH);
     this.renderRegions();
 
@@ -273,23 +245,19 @@ export class CityScene extends Phaser.Scene {
     }
   }
 
-  private groundBlitterFor(key: string): Phaser.GameObjects.Blitter {
-    let b = this.groundBlitters.get(key);
-    if (!b) {
-      b = this.add.blitter(0, 0, key).setDepth(FLOOR_DEPTH);
-      this.groundBlitters.set(key, b);
-    }
-    return b;
-  }
-
   private renderRegions() {
-    if (!this.sidesGraphics || !this.edgesGraphics || !this.linksGraphics) {
+    if (
+      !this.sidesGraphics ||
+      !this.edgesGraphics ||
+      !this.linksGraphics ||
+      !this.topGraphics
+    ) {
       return;
     }
     this.sidesGraphics.clear();
     this.linksGraphics.clear();
+    this.topGraphics.clear();
     this.edgesGraphics.clear();
-    for (const b of this.groundBlitters.values()) b.clear();
     for (const label of this.regionLabels) label.destroy();
     this.regionLabels = [];
     this.regionByPath = new Map(this.regions.map((r) => [r.path, r]));
@@ -301,7 +269,7 @@ export class CityScene extends Phaser.Scene {
     );
     for (const r of ordered) {
       drawIslandSides(this.sidesGraphics, r);
-      paintIslandTop((key) => this.groundBlitterFor(key), r, STATION_KEYS);
+      drawIslandTop(this.topGraphics, r);
       drawIslandEdges(this.edgesGraphics, r);
 
       const isWork = r.kind === "work";
@@ -311,7 +279,7 @@ export class CityScene extends Phaser.Scene {
         .text(corner.x, corner.y - 4, text, {
           fontFamily: "'JetBrains Mono', ui-monospace, monospace",
           fontSize: "13px",
-          color: isWork ? WORK_LABEL_COLOR : labelColor(r.tint),
+          color: isWork ? WORK_LABEL_COLOR : NORMAL_LABEL_COLOR,
           fontStyle: isWork ? "italic" : "normal",
         })
         .setOrigin(0.5, 1)

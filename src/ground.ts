@@ -1,12 +1,19 @@
 import type Phaser from "phaser";
 import type { Region } from "../shared/types.ts";
-import { TILE_W, tileToScreen } from "./iso.ts";
+import { tileToScreen } from "./iso.ts";
 
-export const FLOOR_COUNT = 8;
 const THICKNESS = 14;
-const SIDE_LEFT = 0x14171d;
-const SIDE_RIGHT = 0x1d222b;
-const EDGE_HI = 0x647082;
+// Beveled slab faces, in a dark mauve so the pink top reads as lit.
+const SIDE_LEFT = 0x342330;
+const SIDE_RIGHT = 0x281a24;
+// Top-edge highlight and folder-tinted outline.
+const EDGE_HI = 0xf6d8e6;
+const BORDER = 0xe7c2d2;
+// Panel surfaces: a soft rose for plain folders, brighter for active ones.
+const PANEL_NORMAL = 0xc79cb0;
+const PANEL_WORK = 0xe6b1ca;
+const GRID_LIGHT = 0xffffff;
+const GRID_DARK = 0x7c5165;
 
 type Pt = { x: number; y: number };
 
@@ -29,10 +36,6 @@ function poly(g: Phaser.GameObjects.Graphics, pts: Pt[]): void {
   g.fillPath();
 }
 
-function floorVariant(x: number, y: number): number {
-  return Math.abs((x * 73856093) ^ (y * 19349663)) % FLOOR_COUNT;
-}
-
 function centerScreen(r: Region): Pt {
   return tileToScreen(r.origin.x + r.size.w / 2, r.origin.y + r.size.h / 2);
 }
@@ -49,8 +52,8 @@ function parentOf(r: Region, regions: Region[]): Region | null {
   return best;
 }
 
-const LINK_BASE = 0x1b2630;
-const LINK_CORE = 0x3a5564;
+const LINK_BASE = 0x2a1a24;
+const LINK_CORE = 0x6e4256;
 
 // EXAPUNKS-style cables linking each island to its parent folder. Drawn below
 // the island tops so they slip under the edges and only show across the gaps.
@@ -70,7 +73,7 @@ export function drawIslandLinks(
   }
 }
 
-// The extruded slab sides, drawn below the tiled top.
+// The extruded slab sides, drawn below the panel top.
 export function drawIslandSides(g: Phaser.GameObjects.Graphics, r: Region): void {
   const { E, S, W } = corners(r);
   const down = (p: Pt): Pt => ({ x: p.x, y: p.y + THICKNESS });
@@ -80,26 +83,38 @@ export function drawIslandSides(g: Phaser.GameObjects.Graphics, r: Region): void
   poly(g, [S, E, down(E), down(S)]);
 }
 
-// The island's top surface, stamped from the floor tile sprites.
-export function paintIslandTop(
-  blitterFor: (key: string) => Phaser.GameObjects.Blitter,
-  r: Region,
-  floorKeys: string[],
-): void {
-  const hw = TILE_W / 2;
+// The island's flat top: a rose panel with a faint isometric grid, the way an
+// EXAPUNKS host shows its grid spaces.
+export function drawIslandTop(g: Phaser.GameObjects.Graphics, r: Region): void {
+  const { N, E, S, W } = corners(r);
+  g.fillStyle(r.kind === "work" ? PANEL_WORK : PANEL_NORMAL, 1);
+  poly(g, [N, E, S, W]);
+
   const { x: ox, y: oy } = r.origin;
-  for (let y = oy; y < oy + r.size.h; y++) {
-    for (let x = ox; x < ox + r.size.w; x++) {
-      const s = tileToScreen(x, y);
-      blitterFor(floorKeys[floorVariant(x, y)]!).create(s.x - hw, s.y);
-    }
+  const { w, h } = r.size;
+  const gridLine = (a: Pt, b: Pt) => {
+    g.lineBetween(a.x, a.y, b.x, b.y);
+  };
+  g.lineStyle(1, GRID_DARK, 0.35);
+  for (let i = 1; i < w; i++) {
+    gridLine(tileToScreen(ox + i, oy), tileToScreen(ox + i, oy + h));
+  }
+  for (let j = 1; j < h; j++) {
+    gridLine(tileToScreen(ox, oy + j), tileToScreen(ox + w, oy + j));
+  }
+  g.lineStyle(1, GRID_LIGHT, 0.08);
+  for (let i = 1; i < w; i++) {
+    gridLine(
+      tileToScreen(ox + i, oy + 0.04),
+      tileToScreen(ox + i, oy + h + 0.04),
+    );
   }
 }
 
-// The beveled rim, drawn above the tiles: folder-tinted border + lit top edge.
+// The beveled rim, drawn above the panel: folder-tinted border + lit top edge.
 export function drawIslandEdges(g: Phaser.GameObjects.Graphics, r: Region): void {
   const { N, E, S, W } = corners(r);
-  g.lineStyle(2, r.tint, 0.9);
+  g.lineStyle(2, BORDER, 0.85);
   g.beginPath();
   g.moveTo(N.x, N.y);
   g.lineTo(E.x, E.y);
