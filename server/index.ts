@@ -77,7 +77,7 @@ const server = Bun.serve<WSData>({
 
     if (url.pathname === "/world") {
       const started = performance.now();
-      const paths = await getRunningBinaryPaths();
+      const paths = await getRunningBinaryPaths("/proc", terminals.pids());
       for (const p of paths) knownExes.add(p);
       const world = await buildWorldFor(paths);
       const elapsedMs = Math.round(performance.now() - started);
@@ -88,7 +88,7 @@ const server = Bun.serve<WSData>({
     }
 
     if (url.pathname === "/procs") {
-      const processes = await getRunningProcesses();
+      const processes = await getRunningProcesses("/proc", terminals.pids());
       return Response.json({ capturedAt: Date.now(), processes });
     }
 
@@ -155,7 +155,7 @@ console.log(`[server] regions = directories of currently running binaries`);
 setInterval(async () => {
   if (server.subscriberCount(TOPIC) === 0) return;
   try {
-    const processes = await sampler.sample();
+    const processes = await sampler.sample("/proc", terminals.pids());
     const activity = await activitySampler.sample(processes.map((p) => p.pid));
     for (const p of processes) p.activity = activity.get(p.pid) ?? null;
 

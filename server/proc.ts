@@ -8,6 +8,7 @@ const PAGE_SIZE = 4096;
 
 type RawProcess = {
   pid: number;
+  ppid: number;
   exe: string;
   comm: string;
   jiffies: number;
@@ -18,13 +19,18 @@ function clamp01(n: number): number {
   return n < 0 ? 0 : n > 1 ? 1 : n;
 }
 
-async function readCpuJiffies(pidDir: string): Promise<number> {
+async function readStat(
+  pidDir: string,
+): Promise<{ ppid: number; jiffies: number }> {
   try {
     const stat = await readFile(join(pidDir, "stat"), "utf8");
     const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
-    return Number(fields[11]) + Number(fields[12]);
+    return {
+      ppid: Number(fields[1]) || 0,
+      jiffies: Number(fields[11]) + Number(fields[12]),
+    };
   } catch {
-    return 0;
+    return { ppid: 0, jiffies: 0 };
   }
 }
 
@@ -82,30 +88,64 @@ async function readRawProcesses(
       comm = exe.split("/").pop() ?? "";
     }
 
-    const jiffies = await readCpuJiffies(pidDir);
+    const { ppid, jiffies } = await readStat(pidDir);
     const rssBytes = await readRssBytes(pidDir);
-    procs.push({ pid, exe, comm, jiffies, rssBytes });
+    procs.push({ pid, ppid, exe, comm, jiffies, rssBytes });
   }
 
   const totalJiffies = await readTotalJiffies(procPath);
   return { procs, totalJiffies };
 }
 
+// pids descending from any seed (the seeds themselves are excluded), so a
+// terminal's shell and the commands it spawns are kept but the bun-spawned
+// `script` wrapper is not.
+export function descendantsOf(
+  procs: { pid: number; ppid: number }[],
+  seeds: number[],
+): Set<number> {
+  const childrenByParent = new Map<number, number[]>();
+  for (const p of procs) {
+    const list = childrenByParent.get(p.ppid);
+    if (list) list.push(p.pid);
+    else childrenByParent.set(p.ppid, [p.pid]);
+  }
+  const result = new Set<number>();
+  const queue = [...seeds];
+  while (queue.length > 0) {
+    for (const child of childrenByParent.get(queue.shift()!) ?? []) {
+      if (!result.has(child)) {
+        result.add(child);
+        queue.push(child);
+      }
+    }
+  }
+  return result;
+}
+
+function keep(procs: RawProcess[], seeds?: number[]): RawProcess[] {
+  if (!seeds) return procs;
+  const wanted = descendantsOf(procs, seeds);
+  return procs.filter((p) => wanted.has(p.pid));
+}
+
 export async function getRunningBinaryPaths(
   procPath = "/proc",
+  seeds?: number[],
 ): Promise<string[]> {
   const { procs } = await readRawProcesses(procPath);
   const paths = new Set<string>();
-  for (const p of procs) paths.add(p.exe);
+  for (const p of keep(procs, seeds)) paths.add(p.exe);
   return [...paths].sort();
 }
 
 export async function getRunningProcesses(
   procPath = "/proc",
+  seeds?: number[],
 ): Promise<ProcessSnapshot[]> {
   const { procs } = await readRawProcesses(procPath);
   const ram = totalmem();
-  return procs
+  return keep(procs, seeds)
     .map((p) => ({
       pid: p.pid,
       exe: p.exe,
@@ -122,12 +162,12 @@ export class ProcSampler {
   private prevTotal = 0;
   private readonly cores = Math.max(1, cpus().length);
 
-  async sample(procPath = "/proc"): Promise<ProcessSnapshot[]> {
+  async sample(procPath = "/proc", seeds?: number[]): Promise<ProcessSnapshot[]> {
     const { procs, totalJiffies } = await readRawProcesses(procPath);
     const ram = totalmem();
     const totalDelta = totalJiffies - this.prevTotal;
 
-    const snapshots = procs.map((p) => {
+    const snapshots = keep(procs, seeds).map((p) => {
       const prev = this.prevJiffies.get(p.pid);
       const cpu =
         prev !== undefined && totalDelta > 0

@@ -5,8 +5,24 @@ import { join } from "node:path";
 import {
   getRunningBinaryPaths,
   getRunningProcesses,
+  descendantsOf,
   ProcSampler,
 } from "./proc.ts";
+
+test("descendantsOf returns the subtree below seeds, excluding the seeds", () => {
+  const procs = [
+    { pid: 10, ppid: 1 }, // server
+    { pid: 11, ppid: 10 }, // script (seed)
+    { pid: 12, ppid: 11 }, // bash
+    { pid: 13, ppid: 12 }, // node
+    { pid: 14, ppid: 13 }, // node's child
+    { pid: 20, ppid: 1 }, // unrelated
+  ];
+  const d = descendantsOf(procs, [11]);
+  expect([...d].sort((a, b) => a - b)).toEqual([12, 13, 14]);
+  expect(d.has(11)).toBe(false);
+  expect(d.has(20)).toBe(false);
+});
 
 const root = join(tmpdir(), `tty-proc-test-${process.pid}-${Date.now()}`);
 const procPath = join(root, "proc");

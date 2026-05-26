@@ -4,6 +4,7 @@ export type TermClient = { send: (data: string) => void };
 
 class Terminal {
   readonly id: string;
+  readonly pid: number;
   private proc: ReturnType<typeof Bun.spawn>;
   private buffer = "";
   private clients = new Set<TermClient>();
@@ -18,6 +19,7 @@ class Terminal {
       env: { ...process.env, TERM: "xterm-256color" },
       onExit: () => onExit(),
     });
+    this.pid = this.proc.pid;
     void this.pump();
   }
 
@@ -76,6 +78,10 @@ export class TerminalManager {
 
   list(): string[] {
     return [...this.terminals.keys()];
+  }
+
+  pids(): number[] {
+    return [...this.terminals.values()].map((t) => t.pid);
   }
 
   kill(id: string) {
