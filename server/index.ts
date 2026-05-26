@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readlink } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { buildWorld, releaseRegion, type TerminalInfo } from "./world-builder.ts";
@@ -23,9 +23,20 @@ const knownTerminals = new Set<string>();
 const liveClients = new Set<WebSocket>();
 let worldDirty = false;
 
+// Absolute path to the Claude adapter, injected as AISO_PATH so agents can be
+// launched with `claude --plugin-dir $AISO_PATH`.
+const PLUGIN_DIR = resolve(
+  import.meta.dirname,
+  "..",
+  "integrations",
+  "claude",
+  "aiso",
+);
+
 const terminals = new TerminalManager({
   url: `http://127.0.0.1:${PORT}/ingest`,
   token: INGEST_TOKEN,
+  pluginDir: PLUGIN_DIR,
 });
 
 // One robot's worth of state, built from adapter events rather than /proc.

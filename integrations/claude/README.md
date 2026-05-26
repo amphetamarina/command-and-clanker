@@ -19,11 +19,11 @@ and its reads/writes/subagents animate on that terminal's island.
 
 ## Install (development)
 
-Point Claude Code at the plugin directory when launching it inside an AIso
-terminal:
+The AIso terminal also injects `AISO_PATH` (the absolute path to this plugin),
+so inside an AIso terminal you can just run:
 
 ```sh
-claude --plugin-dir /path/to/isotop/integrations/claude/aiso
+claude --plugin-dir $AISO_PATH
 ```
 
 A first-class installer (`aiso install`) and a marketplace listing are planned;
