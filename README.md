@@ -33,19 +33,20 @@ running binaries, then streams live updates over a WebSocket.
   faint isometric grid and beveled edges, labelled with the shell's working
   directory. Its processes live here.
 - **Folder islands.** Each folder an agent touches becomes its own island,
-  wired to the terminal whose process is working there by a cable.
-- **Robots = processes.** One per process descending from a terminal.
-  `claude`, `codex`, and `opencode` walk their own robot; everything else
-  gets a generic chassis. Robots wander their terminal island with live
-  CPU/memory bars, and when a process reads or writes a folder its robot
-  walks to that folder's island and back.
+  wired by a cable to the terminal whose agent is working there.
+- **Robots = agents.** One per agent (and one per subagent it spawns)
+  running in a terminal. `claude` walks the Claude robot, subagents are
+  smaller; opencode and others get their own/generic art. When an agent
+  reads or writes a file, its robot walks to that file's folder island and
+  back — driven by real tool calls, not guesswork.
 - **Left sidebar.** The AIso logo, a "+ Terminal" button, a tab per open
   terminal, and the active terminal docked inline — a real shell over
   `node-pty`, sized to the sidebar and reflowing live, so Claude Code,
   opencode, and other full-screen TUIs render correctly.
 
-AIso shows only the processes that descend from terminals built inside it,
-not your whole machine.
+AIso renders what agents report, not your whole machine: an agent's tool
+calls reach the map through an adapter (see `integrations/`), so only
+instrumented agents (Claude Code today, opencode next) appear.
 
 ## Controls
 
@@ -53,20 +54,23 @@ Pan: drag · Zoom: wheel · Hover a building or robot for details.
 
 ## Architecture
 
-A Node backend reads `/proc`, attributes each process to the in-app
-terminal it descends from, builds the island world (terminals + the
-folders their agents touch), and streams the world, process snapshots, and
-terminal I/O over HTTP + WebSocket (the `ws` library). A Vite + Phaser 3
-frontend renders the isometric scene; terminals run on `node-pty`. See
-[`docs/architecture.md`](docs/architecture.md).
+A Node backend accepts agent events at `POST /ingest` (agents are launched
+from AIso's `node-pty` terminals, which inject the ingest URL, a token, and
+the terminal-island id into the shell). It turns those events into terminal
+and folder islands and a robot per agent, and streams the world plus agent
+snapshots over WebSocket (the `ws` library). A Vite + Phaser 3 frontend
+renders the isometric scene. See
+[`docs/architecture.md`](docs/architecture.md) and `integrations/` for the
+agent adapters.
 
 ```
-server/   Node backend: /proc + CPU/mem + file-activity sampling,
-          world builder, node-pty terminals, HTTP + WebSocket (ws)
-shared/   types shared by server and client
-src/      Vite + Phaser 3 frontend: scene, islands, robots, sidebar,
-          docked terminals
-assets/   vendored sprite pack + logo
+server/        Node backend: /ingest event sink, world builder,
+               node-pty terminals, HTTP + WebSocket (ws)
+shared/        types shared by server and client
+src/           Vite + Phaser 3 frontend: scene, islands, robots, sidebar,
+               docked terminals
+integrations/  agent adapters (Claude Code plugin; opencode next)
+assets/        vendored sprite pack + logo
 docs/     vision, architecture, original v0 spec
 ```
 
