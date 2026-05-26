@@ -8,25 +8,30 @@ independently (e.g. swap Phaser for Pixi without rewriting the samplers).
    Filesystem & /proc            (the real machine)
             |  read-only
             v
-   Bun server (backend)
+   Node server (backend)
      - scanner: hashes running binaries
      - ProcSampler: per-process CPU and memory from /proc
      - FileActivitySampler: which file/folder a process is reading or writing
      - world builder: deterministic regions + buildings
-     - TerminalManager: real PTY shells
+     - TerminalManager: real PTYs via node-pty
             |
    HTTP (snapshot)  +  WebSocket (live world, processes, terminal I/O)
             v
    Browser (Vite + Phaser 3)
-     - isometric scene: ground, walls, buildings, mech NPCs
-     - sidebar: minimap, process inspector, terminal windows
+     - isometric scene: folder islands, buildings, robot NPCs
+     - sidebar: logo, terminal tabs, docked terminal
      - camera / input
 ```
 
-## Backend (Bun)
+The backend runs under Node 22 with `--experimental-strip-types` (so it
+executes the `.ts` sources directly); the test suite still runs under the
+Bun test runner. Shared modules avoid runtime-specific APIs so they work
+in both.
 
-- **Scanner** (`server/scanner.ts`): SHA-256s each running binary into a
-  `ManifestEntry`. Input to the world build.
+## Backend (Node)
+
+- **Scanner** (`server/scanner.ts`): SHA-256s each running binary (via
+  `node:crypto`) into a `ManifestEntry`. Input to the world build.
 - **World builder** (`server/world-builder.ts`): a pure function of the
   manifest (no I/O during build). Groups binaries by parent directory
   into regions, and places regions and the buildings within them on
@@ -43,15 +48,19 @@ independently (e.g. swap Phaser for Pixi without rewriting the samplers).
   is actively reading or writing. Falls back to the process's `cwd` when
   it does bursty I/O with no long-lived handle (editors, agents).
 - **TerminalManager** (`server/terminals.ts`): spawns a real PTY per
-  session via `script -qfc "exec $SHELL -i" /dev/null` (no native addon),
-  buffers recent output, and bridges it to WebSocket clients.
+  session with `node-pty`, buffers recent output, and bridges it to
+  WebSocket clients. Because it is a true PTY it has a real window size and
+  can be resized live, so full-screen TUIs (Claude Code, opencode) reflow
+  to the terminal's actual width.
 
 ### HTTP / WebSocket surface (`server/index.ts`)
 
 - `GET /world` — one-shot world snapshot (regions + buildings).
 - `GET /procs`, `POST /kill` — process snapshot, signal a pid.
-- `POST /term/new`, `POST /term/kill`, `WS /term?id=` — terminal lifecycle
-  and byte stream.
+- `POST /term/new` (optional `{cols, rows}`), `POST /term/kill`,
+  `WS /term?id=` — terminal lifecycle and I/O. Over the WS the client sends
+  `{i: input}` for keystrokes and `{r: [cols, rows]}` to resize the PTY;
+  the server sends raw shell output back.
 - `WS /live` — pushes `procs` (snapshots with CPU/mem/activity) every tick
   and `world-delta` (new buildings, current regions) when the world
   changes.
@@ -59,10 +68,11 @@ independently (e.g. swap Phaser for Pixi without rewriting the samplers).
 ## Frontend (Phaser 3 + Vite)
 
 - **CityScene** (`src/scene.ts`) owns the isometric scene and consumes the
-  WebSocket. `iso.ts` is the projection; `ground.ts` paints the floor and
-  desert via blitters; `walls.ts` rings the platform; `npc.ts` places the
-  mechs; `sidebar.ts` is the HUD (minimap, inspector, build); `terminals.ts`
-  drives the xterm.js windows.
+  WebSocket. `iso.ts` is the projection; `ground.ts` draws the folder
+  islands (beveled rose panels with a grid) and the cables between them;
+  `npc.ts` defines the robots and maps movement to the 8-direction walk
+  spritesheets; `sidebar.ts` is the HUD (logo, terminal tabs); `terminals.ts`
+  drives the docked xterm.js panes and keeps the PTY sized to the sidebar.
 - The static world layer is append-mostly: deltas add buildings and
   re-render regions without disturbing what is already placed.
 
@@ -105,11 +115,13 @@ type ProcessSnapshot = {
 };
 ```
 
+The placement cache is persisted to `.isotop-cache.json`
+(`server/persistence.ts`), so positions stay stable across restarts.
+
 ## Not yet decided / deferred
 
-- **Persistence**: the world layout and placement cache live in process
-  memory, so a restart reshuffles positions. Caching to disk (keyed by
-  package-manager state) is the obvious next step.
+- **Per-terminal islands**: giving each terminal its own host island,
+  wired to the folders its agents touch, is the next layout step.
 - **Pipes between processes**: `/proc/<pid>/fd` socket/pipe inodes could
   link producers and consumers, but detection is its own spike.
 - **Packaging**: web-only via `bun run dev` today; a Tauri wrapper is a
