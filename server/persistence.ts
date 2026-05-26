@@ -1,3 +1,4 @@
+import { readFile, writeFile } from "node:fs/promises";
 import { emptyCache, type PlacementCache } from "./world-builder.ts";
 
 type Serialized = {
@@ -8,7 +9,7 @@ type Serialized = {
 
 export async function loadCache(path: string): Promise<PlacementCache> {
   try {
-    const data = JSON.parse(await Bun.file(path).text()) as Serialized;
+    const data = JSON.parse(await readFile(path, "utf8")) as Serialized;
     return {
       region: new Map(data.region ?? []),
       building: new Map(data.building ?? []),
@@ -28,5 +29,5 @@ export async function saveCache(
     building: [...cache.building],
     freeRegionSlots: cache.freeRegionSlots,
   };
-  await Bun.write(path, JSON.stringify(data));
+  await writeFile(path, JSON.stringify(data));
 }

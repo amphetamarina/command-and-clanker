@@ -1,4 +1,5 @@
-import { readdir, stat } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import type { ManifestEntry } from "../shared/types.ts";
 
@@ -24,10 +25,8 @@ export async function hashFile(
     return { path, hash: cached.hash, size: info.size };
   }
 
-  const bytes = await Bun.file(path).bytes();
-  const hasher = new Bun.CryptoHasher("sha256");
-  hasher.update(bytes);
-  const hash = hasher.digest("hex");
+  const bytes = await readFile(path);
+  const hash = createHash("sha256").update(bytes).digest("hex");
   cache?.set(path, { size: info.size, mtimeMs: info.mtimeMs, hash });
   return { path, hash, size: info.size };
 }
