@@ -1,91 +1,72 @@
 import type Phaser from "phaser";
-import { TILE_W, tileToScreen } from "./iso.ts";
+import type { Region } from "../shared/types.ts";
+import { tileToScreen } from "./iso.ts";
 
-export const FLOOR_COUNT = 8;
+const THICKNESS = 12;
+const TOP_BIN = 0x343a47;
+const TOP_WORK = 0x2b3640;
+const GRID = 0x434b5a;
+const SIDE_LEFT = 0x1c2029;
+const SIDE_RIGHT = 0x252b35;
+const EDGE_HI = 0x5c6577;
 
-const BUILDING_FLOOR = 3; // floor-04, metal grid pad
-const REGION_FLOOR = 1; // floor-02, blue panel
-const EMPTY_FLOOR = 5; // floor-06, plain dark
+type Pt = { x: number; y: number };
 
-const DESERT_FREQ = 0.18;
-
-export type RegionBox = { x0: number; y0: number; x1: number; y1: number };
-
-export type GroundParams = {
-  stationFloors: string[];
-  desertFloors: string[];
-  buildingPads: Set<string>;
-  regions: RegionBox[];
-  extentX: number;
-  extentY: number;
-  padding: number;
-  desertMargin: number;
-};
-
-function hash01(ix: number, iy: number): number {
-  let h = (ix * 374761393 + iy * 668265263) >>> 0;
-  h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
-  return h / 4294967295;
+function poly(g: Phaser.GameObjects.Graphics, pts: Pt[], fill: boolean): void {
+  g.beginPath();
+  g.moveTo(pts[0]!.x, pts[0]!.y);
+  for (let i = 1; i < pts.length; i++) g.lineTo(pts[i]!.x, pts[i]!.y);
+  g.closePath();
+  if (fill) g.fillPath();
+  else g.strokePath();
 }
 
-function smooth(t: number): number {
-  return t * t * (3 - 2 * t);
-}
-
-function valueNoise(x: number, y: number): number {
-  const ix = Math.floor(x);
-  const iy = Math.floor(y);
-  const fx = smooth(x - ix);
-  const fy = smooth(y - iy);
-  const a = hash01(ix, iy) + (hash01(ix + 1, iy) - hash01(ix, iy)) * fx;
-  const b = hash01(ix, iy + 1) + (hash01(ix + 1, iy + 1) - hash01(ix, iy + 1)) * fx;
-  return a + (b - a) * fy;
-}
-
-function regionTileSet(regions: RegionBox[]): Set<string> {
-  const tiles = new Set<string>();
-  for (const r of regions) {
-    for (let y = r.y0; y < r.y1; y++) {
-      for (let x = r.x0; x < r.x1; x++) tiles.add(`${x},${y}`);
-    }
-  }
-  return tiles;
-}
-
-export function paintGround(
-  blitterFor: (key: string) => Phaser.GameObjects.Blitter,
-  p: GroundParams,
+// Draws one folder as an EXAPUNKS-style host: a flat beveled panel with a
+// subtle internal grid, extruded a little so it reads as a floating slab.
+export function drawHostPanel(
+  g: Phaser.GameObjects.Graphics,
+  r: Region,
 ): void {
-  const hw = TILE_W / 2;
-  const px0 = -p.padding;
-  const py0 = -p.padding;
-  const px1 = p.extentX + p.padding;
-  const py1 = p.extentY + p.padding;
-  const regionTiles = regionTileSet(p.regions);
+  const { x: ox, y: oy } = r.origin;
+  const { w, h } = r.size;
+  const N = tileToScreen(ox, oy);
+  const E = tileToScreen(ox + w, oy);
+  const S = tileToScreen(ox + w, oy + h);
+  const W = tileToScreen(ox, oy + h);
+  const down = (p: Pt): Pt => ({ x: p.x, y: p.y + THICKNESS });
 
-  const place = (x: number, y: number, key: string) => {
-    const s = tileToScreen(x, y);
-    blitterFor(key).create(s.x - hw, s.y);
-  };
+  g.fillStyle(SIDE_LEFT, 1);
+  poly(g, [W, S, down(S), down(W)], true);
+  g.fillStyle(SIDE_RIGHT, 1);
+  poly(g, [S, E, down(E), down(S)], true);
 
-  for (let y = py0 - p.desertMargin; y < py1 + p.desertMargin; y++) {
-    for (let x = px0 - p.desertMargin; x < px1 + p.desertMargin; x++) {
-      const onStation = x >= px0 && x < px1 && y >= py0 && y < py1;
-      if (onStation) {
-        const key = `${x},${y}`;
-        let idx = EMPTY_FLOOR;
-        if (p.buildingPads.has(key)) idx = BUILDING_FLOOR;
-        else if (regionTiles.has(key)) idx = REGION_FLOOR;
-        place(x, y, p.stationFloors[idx]!);
-        continue;
-      }
-      const dx = x < px0 ? px0 - x : x >= px1 ? x - (px1 - 1) : 0;
-      const dy = y < py0 ? py0 - y : y >= py1 ? y - (py1 - 1) : 0;
-      const dist = Math.max(dx, dy);
-      if (valueNoise(x * DESERT_FREQ, y * DESERT_FREQ) > dist / (p.desertMargin + 1)) {
-        const v = Math.floor(hash01(x, y) * p.desertFloors.length);
-        place(x, y, p.desertFloors[v]!);
-      }
-    }
+  g.fillStyle(r.kind === "work" ? TOP_WORK : TOP_BIN, 1);
+  poly(g, [N, E, S, W], true);
+
+  g.lineStyle(1, GRID, 0.5);
+  for (let ty = oy; ty <= oy + h; ty++) {
+    const a = tileToScreen(ox, ty);
+    const b = tileToScreen(ox + w, ty);
+    g.beginPath();
+    g.moveTo(a.x, a.y);
+    g.lineTo(b.x, b.y);
+    g.strokePath();
   }
+  for (let tx = ox; tx <= ox + w; tx++) {
+    const a = tileToScreen(tx, oy);
+    const b = tileToScreen(tx, oy + h);
+    g.beginPath();
+    g.moveTo(a.x, a.y);
+    g.lineTo(b.x, b.y);
+    g.strokePath();
+  }
+
+  g.lineStyle(2, r.tint, 0.9);
+  poly(g, [N, E, S, W], false);
+  g.lineStyle(2, EDGE_HI, 0.7);
+  g.beginPath();
+  g.moveTo(W.x, W.y);
+  g.lineTo(N.x, N.y);
+  g.lineTo(E.x, E.y);
+  g.strokePath();
 }

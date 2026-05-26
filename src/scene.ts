@@ -10,8 +10,7 @@ import {
 import { liveSocketUrl } from "./api.ts";
 import { Sidebar } from "./sidebar.ts";
 import { TerminalsUI } from "./terminals.ts";
-import { paintGround, FLOOR_COUNT } from "./ground.ts";
-import { placeWalls, WALL_KEYS, wallAssetUrl } from "./walls.ts";
+import { drawHostPanel } from "./ground.ts";
 import { TILE_H, tileToScreen } from "./iso.ts";
 import {
   NPC_VARIANT_KEYS,
@@ -21,12 +20,8 @@ import {
   type NpcSpriteKey,
 } from "./npc.ts";
 
-const GROUND_PADDING = 4;
-const DESERT_MARGIN = 10;
-const REGION_DEPTH = -10;
 const GROUND_DEPTH = -20;
 const LABEL_DEPTH = 100000;
-const REGION_TINT_ALPHA = 0.22;
 const WORK_LABEL_COLOR = "#7fe0d0";
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 4;
@@ -117,28 +112,12 @@ function npcAssetUrl(key: NpcSpriteKey): string {
   return `/isotop-assets/sci-fi/units/Mech/${dir}/Idle/idlesued.png`;
 }
 
-const STATION_KEYS = Array.from(
-  { length: FLOOR_COUNT },
-  (_, i) => `floor/station/${i + 1}`,
-);
-const DESERT_KEYS = Array.from(
-  { length: FLOOR_COUNT },
-  (_, i) => `floor/desert/${i + 1}`,
-);
-
-function terrainAssetUrl(kind: "station" | "desert", index: number): string {
-  const n = index.toString().padStart(2, "0");
-  return `/isotop-assets/sci-fi/terrain/${kind}/floor-${n}.png`;
-}
-
 export class CityScene extends Phaser.Scene {
   private buildings: BuildingDescriptor[] = [];
   private regions: Region[] = [];
   private regionByPath = new Map<string, Region>();
   private buildingByExe = new Map<string, BuildingDescriptor>();
   private npcs = new Map<number, NpcState>();
-  private groundBlitters = new Map<string, Phaser.GameObjects.Blitter>();
-  private wallSprites: Phaser.GameObjects.Image[] = [];
   private regionGraphics: Phaser.GameObjects.Graphics | null = null;
   private regionLabels: Phaser.GameObjects.Text[] = [];
   private tooltip: HTMLDivElement | null = null;
@@ -174,13 +153,6 @@ export class CityScene extends Phaser.Scene {
     for (const key of NPC_VARIANT_KEYS) {
       this.load.image(key, npcAssetUrl(key));
     }
-    for (let i = 0; i < FLOOR_COUNT; i++) {
-      this.load.image(STATION_KEYS[i]!, terrainAssetUrl("station", i + 1));
-      this.load.image(DESERT_KEYS[i]!, terrainAssetUrl("desert", i + 1));
-    }
-    for (let i = 0; i < WALL_KEYS.length; i++) {
-      this.load.image(WALL_KEYS[i]!, wallAssetUrl(i + 1));
-    }
     this.load.image("icon/terminal", "/isotop-assets/sci-fi/icons/terminal.png");
   }
 
@@ -189,8 +161,7 @@ export class CityScene extends Phaser.Scene {
       (a, b) => a.tile.x + a.tile.y - (b.tile.x + b.tile.y),
     );
 
-    this.regionGraphics = this.add.graphics().setDepth(REGION_DEPTH);
-    this.redrawGround();
+    this.regionGraphics = this.add.graphics().setDepth(GROUND_DEPTH);
     this.renderRegions();
 
     for (const d of sorted) {
@@ -222,63 +193,7 @@ export class CityScene extends Phaser.Scene {
     this.startLiveSocket();
   }
 
-  private worldExtent(): { x: number; y: number } {
-    let x = 1;
-    let y = 1;
-    for (const d of this.buildings) {
-      x = Math.max(x, d.tile.x + d.footprint.w);
-      y = Math.max(y, d.tile.y + d.footprint.h);
-    }
-    for (const r of this.regions) {
-      x = Math.max(x, r.origin.x + r.size.w);
-      y = Math.max(y, r.origin.y + r.size.h);
-    }
-    return { x: Math.ceil(x), y: Math.ceil(y) };
-  }
 
-  private groundBlitterFor(key: string): Phaser.GameObjects.Blitter {
-    let b = this.groundBlitters.get(key);
-    if (!b) {
-      b = this.add.blitter(0, 0, key).setDepth(GROUND_DEPTH);
-      this.groundBlitters.set(key, b);
-    }
-    return b;
-  }
-
-  private redrawGround() {
-    for (const b of this.groundBlitters.values()) b.clear();
-    for (const w of this.wallSprites) w.destroy();
-    const extent = this.worldExtent();
-
-    const buildingPads = new Set<string>();
-    for (const b of this.buildings) {
-      const cx = Math.round(b.tile.x);
-      const cy = Math.round(b.tile.y);
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          buildingPads.add(`${cx + dx},${cy + dy}`);
-        }
-      }
-    }
-    const regions = this.regions.map((r) => ({
-      x0: r.origin.x,
-      y0: r.origin.y,
-      x1: r.origin.x + r.size.w,
-      y1: r.origin.y + r.size.h,
-    }));
-
-    paintGround((key) => this.groundBlitterFor(key), {
-      stationFloors: STATION_KEYS,
-      desertFloors: DESERT_KEYS,
-      buildingPads,
-      regions,
-      extentX: extent.x,
-      extentY: extent.y,
-      padding: GROUND_PADDING,
-      desertMargin: DESERT_MARGIN,
-    });
-    this.wallSprites = placeWalls(this, extent.x, extent.y, GROUND_PADDING);
-  }
 
   private renderRegions() {
     if (!this.regionGraphics) return;
@@ -287,50 +202,18 @@ export class CityScene extends Phaser.Scene {
     this.regionLabels = [];
     this.regionByPath = new Map(this.regions.map((r) => [r.path, r]));
 
-    for (const r of this.regions) {
+    const ordered = [...this.regions].sort(
+      (a, b) => a.origin.x + a.origin.y - (b.origin.x + b.origin.y),
+    );
+    for (const r of ordered) {
+      drawHostPanel(this.regionGraphics, r);
+
       const isWork = r.kind === "work";
-      const g = this.regionGraphics;
-      g.fillStyle(r.tint, isWork ? REGION_TINT_ALPHA * 0.6 : REGION_TINT_ALPHA);
-      for (let y = r.origin.y; y < r.origin.y + r.size.h; y++) {
-        for (let x = r.origin.x; x < r.origin.x + r.size.w; x++) {
-          const N = tileToScreen(x, y);
-          const E = tileToScreen(x + 1, y);
-          const S = tileToScreen(x + 1, y + 1);
-          const W = tileToScreen(x, y + 1);
-          g.beginPath();
-          g.moveTo(N.x, N.y);
-          g.lineTo(E.x, E.y);
-          g.lineTo(S.x, S.y);
-          g.lineTo(W.x, W.y);
-          g.closePath();
-          g.fillPath();
-        }
-      }
-
-      if (isWork) {
-        const ox = r.origin.x;
-        const oy = r.origin.y;
-        const top = tileToScreen(ox, oy);
-        const right = tileToScreen(ox + r.size.w, oy);
-        const bottom = tileToScreen(ox + r.size.w, oy + r.size.h);
-        const leftPt = tileToScreen(ox, oy + r.size.h);
-        g.lineStyle(2, brightenTint(r.tint, 0.5), 0.85);
-        g.beginPath();
-        g.moveTo(top.x, top.y);
-        g.lineTo(right.x, right.y);
-        g.lineTo(bottom.x, bottom.y);
-        g.lineTo(leftPt.x, leftPt.y);
-        g.closePath();
-        g.strokePath();
-      }
-
       const corner = tileToScreen(r.origin.x, r.origin.y);
-      const text = isWork
-        ? `◈ ${formatRegionLabel(r.path)}`
-        : formatRegionLabel(r.path);
+      const text = formatRegionLabel(r.path);
       const label = this.add
-        .text(corner.x, corner.y - 6, text, {
-          fontFamily: "ui-monospace, monospace",
+        .text(corner.x, corner.y - 4, text, {
+          fontFamily: "'JetBrains Mono', ui-monospace, monospace",
           fontSize: "13px",
           color: isWork ? WORK_LABEL_COLOR : labelColor(r.tint),
           fontStyle: isWork ? "italic" : "normal",
@@ -390,7 +273,6 @@ export class CityScene extends Phaser.Scene {
           }
           this.regions = msg.regions;
           this.renderRegions();
-          this.redrawGround();
           console.log(
             `[ws] +${msg.buildings.length} new building(s), ${msg.regions.length} regions`,
           );
