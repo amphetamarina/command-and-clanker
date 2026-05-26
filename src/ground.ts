@@ -40,8 +40,8 @@ export function regionCenter(r: Region): Pt {
   return tileToScreen(r.origin.x + r.size.w / 2, r.origin.y + r.size.h / 2);
 }
 
-const LINK_BASE = 0x140c12;
-const LINK_CORE = 0xab6982;
+const LINK_BASE = 0x0c0710;
+const LINK_CORE = 0xe28bab;
 
 // An EXAPUNKS-style cable between two island centers. Drawn below the island
 // tops so it slips under the edges and only shows across the gaps.
@@ -50,9 +50,9 @@ export function drawCable(
   a: Pt,
   b: Pt,
 ): void {
-  g.lineStyle(4, LINK_BASE, 0.9);
+  g.lineStyle(8, LINK_BASE, 0.95);
   g.lineBetween(a.x, a.y, b.x, b.y);
-  g.lineStyle(1.5, LINK_CORE, 0.85);
+  g.lineStyle(3.5, LINK_CORE, 0.95);
   g.lineBetween(a.x, a.y, b.x, b.y);
 }
 
