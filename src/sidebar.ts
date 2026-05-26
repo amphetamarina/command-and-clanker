@@ -1,4 +1,4 @@
-export const SIDEBAR_W = 220;
+export const SIDEBAR_FRACTION = 0.4;
 const PANEL_PAD = 12;
 
 type SidebarOptions = {
@@ -6,8 +6,8 @@ type SidebarOptions = {
 };
 
 export class Sidebar {
-  private termList: HTMLDivElement;
-  private termEmpty: HTMLDivElement;
+  readonly terminalHost: HTMLDivElement;
+  private tabs: HTMLDivElement;
 
   constructor(private opts: SidebarOptions) {
     const root = document.createElement("div");
@@ -15,10 +15,13 @@ export class Sidebar {
       "position:fixed",
       "top:0",
       "left:0",
-      `width:${SIDEBAR_W}px`,
+      `width:${SIDEBAR_FRACTION * 100}vw`,
       "height:100%",
       "box-sizing:border-box",
       `padding:${PANEL_PAD}px`,
+      "display:flex",
+      "flex-direction:column",
+      "gap:10px",
       "background:linear-gradient(#15151f,#101019)",
       "border-right:2px solid #2c2c44",
       "box-shadow:4px 0 16px rgba(0,0,0,0.5)",
@@ -26,56 +29,49 @@ export class Sidebar {
       "color:#d8d8ec",
       "font-size:13px",
       "z-index:50",
-      "user-select:none",
     ].join(";");
 
+    const header = document.createElement("div");
+    header.style.cssText =
+      "display:flex;align-items:center;gap:12px;flex:none";
     const title = document.createElement("div");
     title.textContent = "ISOTOP";
-    title.style.cssText =
-      "letter-spacing:4px;font-size:17px;color:#6bb6ff;text-align:center;margin-bottom:14px";
-
-    const buildSection = document.createElement("div");
-    buildSection.append(this.sectionLabel("BUILD"));
-    const termBtn = document.createElement("button");
-    termBtn.style.cssText = [
+    title.style.cssText = "letter-spacing:4px;font-size:17px;color:#6bb6ff";
+    const buildBtn = document.createElement("button");
+    buildBtn.style.cssText = [
       "display:flex",
       "align-items:center",
-      "gap:10px",
-      "width:100%",
-      "padding:8px 10px",
+      "gap:8px",
+      "padding:6px 12px",
       "background:#16263a",
       "color:#7fe0d0",
       "border:1px solid #2c4a5a",
       "border-radius:4px",
       "font-family:inherit",
       "font-size:13px",
-      "text-align:left",
       "cursor:pointer",
     ].join(";");
-    termBtn.append(this.icon(28), this.span("Terminal"));
-    termBtn.addEventListener("click", () => this.opts.onBuildTerminal());
-    buildSection.appendChild(termBtn);
+    buildBtn.append(this.icon(20), this.span("+ Terminal"));
+    buildBtn.addEventListener("click", () => this.opts.onBuildTerminal());
+    header.append(title, buildBtn);
 
-    const termSection = document.createElement("div");
-    termSection.style.cssText = "margin-top:16px";
-    termSection.append(this.sectionLabel("TERMINALS"));
-    this.termList = document.createElement("div");
-    this.termList.style.cssText = "display:flex;flex-direction:column;gap:4px";
-    this.termEmpty = document.createElement("div");
-    this.termEmpty.textContent = "none running";
-    this.termEmpty.style.cssText = "color:#5a5a78;font-size:12px";
-    termSection.append(this.termList, this.termEmpty);
+    this.tabs = document.createElement("div");
+    this.tabs.style.cssText =
+      "display:flex;flex-wrap:wrap;gap:6px;flex:none;min-height:0";
 
-    root.append(title, buildSection, termSection);
+    this.terminalHost = document.createElement("div");
+    this.terminalHost.style.cssText = [
+      "flex:1",
+      "min-height:0",
+      "background:#0b0b14",
+      "border:1px solid #2c2c44",
+      "border-radius:5px",
+      "overflow:auto",
+      "padding:6px",
+    ].join(";");
+
+    root.append(header, this.tabs, this.terminalHost);
     document.body.appendChild(root);
-  }
-
-  private sectionLabel(text: string): HTMLDivElement {
-    const el = document.createElement("div");
-    el.textContent = text;
-    el.style.cssText =
-      "color:#7a7a95;letter-spacing:2px;font-size:12px;margin-bottom:6px";
-    return el;
   }
 
   private span(text: string): HTMLSpanElement {
@@ -93,29 +89,39 @@ export class Sidebar {
     return img;
   }
 
-  setTerminals(ids: string[], onOpen: (id: string) => void): void {
-    this.termList.replaceChildren();
-    this.termEmpty.style.display = ids.length ? "none" : "block";
+  setTerminals(
+    ids: string[],
+    activeId: string | null,
+    onOpen: (id: string) => void,
+    onClose: (id: string) => void,
+  ): void {
+    this.tabs.replaceChildren();
     for (const id of ids) {
-      const row = document.createElement("button");
-      row.style.cssText = [
+      const active = id === activeId;
+      const tab = document.createElement("div");
+      tab.style.cssText = [
         "display:flex",
         "align-items:center",
-        "gap:8px",
-        "width:100%",
-        "padding:5px 8px",
-        "background:#15151f",
-        "color:#cfcfe6",
-        "border:1px solid #2c2c44",
+        "gap:6px",
+        "padding:4px 8px",
+        `background:${active ? "#23344a" : "#15151f"}`,
+        `border:1px solid ${active ? "#3a6a8a" : "#2c2c44"}`,
         "border-radius:4px",
-        "font-family:inherit",
+        `color:${active ? "#cfeaff" : "#9a9ab5"}`,
         "font-size:13px",
-        "text-align:left",
         "cursor:pointer",
       ].join(";");
-      row.append(this.icon(18), this.span(id));
-      row.addEventListener("click", () => onOpen(id));
-      this.termList.appendChild(row);
+      const label = this.span(id);
+      label.style.cursor = "pointer";
+      label.addEventListener("click", () => onOpen(id));
+      const close = this.span("×");
+      close.style.cssText = "cursor:pointer;color:#ff8a7a;font-weight:bold";
+      close.addEventListener("click", (e) => {
+        e.stopPropagation();
+        onClose(id);
+      });
+      tab.append(this.icon(16), label, close);
+      this.tabs.appendChild(tab);
     }
   }
 }

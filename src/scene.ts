@@ -8,7 +8,7 @@ import {
   type BuildingSpriteKey,
 } from "../shared/sprites.ts";
 import { liveSocketUrl } from "./api.ts";
-import { Sidebar } from "./sidebar.ts";
+import { Sidebar, SIDEBAR_FRACTION } from "./sidebar.ts";
 import { TerminalsUI } from "./terminals.ts";
 import { drawHostPanel } from "./ground.ts";
 import { TILE_H, tileToScreen } from "./iso.ts";
@@ -161,6 +161,9 @@ export class CityScene extends Phaser.Scene {
       (a, b) => a.tile.x + a.tile.y - (b.tile.x + b.tile.y),
     );
 
+    this.applyCameraViewport();
+    this.scale.on("resize", () => this.applyCameraViewport());
+
     this.regionGraphics = this.add.graphics().setDepth(GROUND_DEPTH);
     this.renderRegions();
 
@@ -175,14 +178,20 @@ export class CityScene extends Phaser.Scene {
     );
     this.cameras.main.centerOn(0, (maxTileSum * TILE_H) / 4);
 
-    this.terminals = new TerminalsUI({
-      onOpened: (id) => this.addTerminalBuilding(id),
-      onClosed: (id) => this.removeTerminalBuilding(id),
-      onList: (ids) =>
-        this.sidebar?.setTerminals(ids, (id) => this.terminals?.open(id)),
-    });
     this.sidebar = new Sidebar({
       onBuildTerminal: () => void this.terminals?.spawn(),
+    });
+    this.terminals = new TerminalsUI({
+      host: this.sidebar.terminalHost,
+      onOpened: (id) => this.addTerminalBuilding(id),
+      onClosed: (id) => this.removeTerminalBuilding(id),
+      onList: (ids, active) =>
+        this.sidebar?.setTerminals(
+          ids,
+          active,
+          (id) => this.terminals?.open(id),
+          (id) => this.terminals?.close(id),
+        ),
     });
     void this.terminals.restore();
 
@@ -191,6 +200,16 @@ export class CityScene extends Phaser.Scene {
     this.setupZoom();
     this.setupTooltipFollow();
     this.startLiveSocket();
+  }
+
+  private applyCameraViewport() {
+    const sw = Math.round(this.scale.width * SIDEBAR_FRACTION);
+    this.cameras.main.setViewport(
+      sw,
+      0,
+      Math.max(1, this.scale.width - sw),
+      this.scale.height,
+    );
   }
 
 
