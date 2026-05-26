@@ -1,5 +1,11 @@
 # AIso
 
+
+
+https://github.com/user-attachments/assets/4b686165-1887-4f58-a574-95c35fa02fb7
+
+
+
 `top`, but isometric — a live pixel-art map of what your terminals are
 running. Build a terminal inside AIso and it becomes an EXAPUNKS-style host
 island; every process it spawns is a robot living on that island, and the
