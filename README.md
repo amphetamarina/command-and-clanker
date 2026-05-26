@@ -25,6 +25,13 @@ claude --plugin-dir $AISO_PATH
 `AISO_PATH` is injected into every AIso terminal, so that is the whole setup —
 as the agent works, robots, folder islands, and file icons appear on the map.
 
+For **opencode**, link its adapter once (its path is injected as
+`AISO_OPENCODE`), then just run `opencode` in an AIso terminal:
+
+```sh
+mkdir -p ~/.config/opencode/plugin && ln -sf "$AISO_OPENCODE" ~/.config/opencode/plugin/aiso.js
+```
+
 > The backend runs under **Node** (for `node-pty`); tests run under **Bun**.
 > `bun install` compiles `node-pty`, which needs a C/C++ toolchain
 > (`python3`, `make`, `g++`) — present on most dev machines.
@@ -77,3 +84,10 @@ bun run typecheck   # tsc --noEmit
 bun test            # test runner (Bun)
 bun run build       # production build into dist/
 ```
+
+## Inspired by
+
+- [EXAPUNKS](https://www.zachtronics.com/exapunks/) — its hosts, files, and links
+- [Factorio](https://www.factorio.com/) — the living-machine, watch-it-run feel
+- [OpenRA](https://www.openra.net/) — open-source Command & Conquer, for the RTS sidebar and build flow
+
