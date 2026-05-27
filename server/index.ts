@@ -381,6 +381,34 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     }
   }
 
+  if (pathname === "/agent/freeze" && method === "POST") {
+    const { terminal } = (await readBody(req)) as { terminal?: unknown };
+    terminals.freeze(String(terminal));
+    return sendJson(res, 200, { ok: true });
+  }
+
+  if (pathname === "/agent/unfreeze" && method === "POST") {
+    const { terminal } = (await readBody(req)) as { terminal?: unknown };
+    terminals.unfreeze(String(terminal));
+    return sendJson(res, 200, { ok: true });
+  }
+
+  if (pathname === "/agent/interrupt" && method === "POST") {
+    const { terminal } = (await readBody(req)) as { terminal?: unknown };
+    terminals.interrupt(String(terminal));
+    return sendJson(res, 200, { ok: true });
+  }
+
+  if (pathname === "/agent/ask" && method === "POST") {
+    const { terminal, text } = (await readBody(req)) as {
+      terminal?: unknown;
+      text?: unknown;
+    };
+    // Append a carriage return so the injected message submits in the agent's TUI.
+    terminals.ask(String(terminal), `${String(text)}\r`);
+    return sendJson(res, 200, { ok: true });
+  }
+
   if (pathname === "/world") {
     const world = await buildWorldFor();
     console.log(`[world] ${world.regions.length} islands`);

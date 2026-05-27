@@ -61,6 +61,22 @@ class Terminal {
       // already gone
     }
   }
+
+  signal(sig: string) {
+    try {
+      this.proc.kill(sig);
+    } catch {
+      // already gone
+    }
+  }
+
+  interrupt() {
+    this.write("\x03");
+  }
+
+  inject(text: string) {
+    this.write(text);
+  }
 }
 
 export type IngestConfig = {
@@ -116,5 +132,21 @@ export class TerminalManager {
   kill(id: string) {
     this.terminals.get(id)?.kill();
     this.terminals.delete(id);
+  }
+
+  freeze(id: string) {
+    this.terminals.get(id)?.signal("SIGSTOP");
+  }
+
+  unfreeze(id: string) {
+    this.terminals.get(id)?.signal("SIGCONT");
+  }
+
+  interrupt(id: string) {
+    this.terminals.get(id)?.interrupt();
+  }
+
+  ask(id: string, text: string) {
+    this.terminals.get(id)?.inject(text);
   }
 }
