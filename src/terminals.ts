@@ -5,7 +5,7 @@ import { createTerminal, killTerminal, termSocketUrl } from "./api.ts";
 
 const COLS = 80;
 const ROWS = 24;
-const STORAGE_KEY = "isotop.terminals";
+const STORAGE_KEY = "clanker.terminals";
 const PROBE_RANGE = 12;
 const PROBE_TIMEOUT_MS = 1200;
 

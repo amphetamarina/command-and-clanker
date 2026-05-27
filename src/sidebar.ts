@@ -35,8 +35,8 @@ export class Sidebar {
     header.style.cssText =
       "display:flex;flex-direction:column;align-items:center;gap:12px;flex:none;padding-top:6px";
     const title = document.createElement("img");
-    title.src = "/logo/aiso-logo.png";
-    title.alt = "AIso";
+    title.src = "/logo/clanker-logo.png";
+    title.alt = "Command & Clanker";
     title.style.cssText = "height:64px;width:auto;display:block;flex:none";
     const buildBtn = document.createElement("button");
     buildBtn.style.cssText = [
@@ -83,7 +83,7 @@ export class Sidebar {
 
   private icon(size: number): HTMLImageElement {
     const img = document.createElement("img");
-    img.src = "/isotop-assets/sci-fi/icons/terminal.png";
+    img.src = "/clanker-assets/sci-fi/icons/terminal.png";
     img.width = size;
     img.height = size;
     img.style.cssText = "image-rendering:pixelated;flex:none";

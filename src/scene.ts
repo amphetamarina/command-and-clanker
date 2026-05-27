@@ -93,9 +93,9 @@ function hashId(id: string): number {
 
 function robotAssetUrl(key: RobotKey): string {
   if ((NAMED_ROBOTS as readonly string[]).includes(key)) {
-    return `/isotop-assets/sci-fi/units/Robots/Spritesheets/${key}-8dir-walk-hover.png`;
+    return `/clanker-assets/sci-fi/units/Robots/Spritesheets/${key}-8dir-walk-hover.png`;
   }
-  return `/isotop-assets/sci-fi/units/Mech/Spritesheets/${key}-8dir-walk-hover.png`;
+  return `/clanker-assets/sci-fi/units/Mech/Spritesheets/${key}-8dir-walk-hover.png`;
 }
 
 export class CityScene extends Phaser.Scene {
@@ -139,14 +139,14 @@ export class CityScene extends Phaser.Scene {
     }
     this.load.spritesheet(
       "icon/terminal-flash",
-      "/isotop-assets/sci-fi/icons/Spritesheets/terminal-typing-flash-8frame.png",
+      "/clanker-assets/sci-fi/icons/Spritesheets/terminal-typing-flash-8frame.png",
       { frameWidth: 128, frameHeight: 128 },
     );
-    this.load.image("icon/file", "/isotop-assets/sci-fi/icons/file.png");
-    this.load.image("icon/file-stack", "/isotop-assets/sci-fi/icons/file-stack.png");
+    this.load.image("icon/file", "/clanker-assets/sci-fi/icons/file.png");
+    this.load.image("icon/file-stack", "/clanker-assets/sci-fi/icons/file-stack.png");
     this.load.spritesheet(
       "icon/file-writing",
-      "/isotop-assets/sci-fi/icons/Spritesheets/file-writing-8frame.png",
+      "/clanker-assets/sci-fi/icons/Spritesheets/file-writing-8frame.png",
       { frameWidth: 128, frameHeight: 128 },
     );
   }
@@ -435,7 +435,7 @@ export class CityScene extends Phaser.Scene {
     const modal = this.ensureModal();
     this.modalMode = "agent";
     this.openAgentId = a.id;
-    (modal.querySelector(".aiso-title") as HTMLElement).textContent =
+    (modal.querySelector(".clanker-title") as HTMLElement).textContent =
       `${a.label} — now`;
     this.fillAgentBody(a);
     modal.style.display = "flex";
@@ -443,7 +443,7 @@ export class CityScene extends Phaser.Scene {
 
   private fillAgentBody(a: AgentSnapshot) {
     if (!this.modal) return;
-    const body = this.modal.querySelector(".aiso-body") as HTMLElement;
+    const body = this.modal.querySelector(".clanker-body") as HTMLElement;
     const now = a.activity
       ? `▶ ${a.activity.direction} ${a.activity.dir}`
       : "▶ idle";
@@ -455,8 +455,8 @@ export class CityScene extends Phaser.Scene {
     const modal = this.ensureModal();
     this.modalMode = "file";
     this.openAgentId = null;
-    const title = modal.querySelector(".aiso-title") as HTMLElement;
-    const body = modal.querySelector(".aiso-body") as HTMLElement;
+    const title = modal.querySelector(".clanker-title") as HTMLElement;
+    const body = modal.querySelector(".clanker-body") as HTMLElement;
     title.textContent = path.split("/").pop() ?? path;
     body.textContent = "loading…";
     modal.style.display = "flex";
@@ -507,7 +507,7 @@ export class CityScene extends Phaser.Scene {
       "font-size:13px",
     ].join(";");
     const title = document.createElement("span");
-    title.className = "aiso-title";
+    title.className = "clanker-title";
     const close = document.createElement("button");
     close.textContent = "×";
     close.style.cssText = [
@@ -521,7 +521,7 @@ export class CityScene extends Phaser.Scene {
     close.addEventListener("click", () => (overlay.style.display = "none"));
     header.append(title, close);
     const body = document.createElement("pre");
-    body.className = "aiso-body";
+    body.className = "clanker-body";
     body.style.cssText = [
       "margin:0",
       "padding:14px",
