@@ -25,7 +25,7 @@ It is two pieces:
 ```sh
 mise install        # Bun + Node, pinned in mise.toml
 bun install         # backend deps (compiles node-pty's native PTY)
-bun run setup       # wire the Claude Code + opencode adapters into your config
+bun run setup       # wire the agent adapters (Claude, opencode, Codex, Grok, Hermes)
 bun run dev         # start the Node backend — keep this running
 ```
 
@@ -45,7 +45,7 @@ scouts. Build a **Terminal**, select it, click the panel to focus it, and run an
 agent:
 
 ```sh
-claude        # or: opencode
+claude        # also: opencode, codex, grok, hermes
 ```
 
 The agent appears as a unit and starts working the map. Scout outward to reveal
