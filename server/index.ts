@@ -488,6 +488,38 @@ httpServer.on("upgrade", (req, socket, head) => {
     });
     return;
   }
+  if (url.pathname === "/termview") {
+    // Like /term, but serves the emulator's resolved screen grid (JSON frames)
+    // instead of raw PTY bytes, for clients that cannot run a VT parser.
+    const id = url.searchParams.get("id") ?? "";
+    const term = terminals.get(id);
+    if (!term) {
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      const client: TermClient = {
+        send: (data) => {
+          if (ws.readyState === ws.OPEN) ws.send(data);
+        },
+      };
+      term.attachView(client);
+      ws.on("message", (raw) => {
+        const text = raw.toString();
+        let msg: { i?: string; r?: [number, number] } | null = null;
+        try {
+          msg = JSON.parse(text);
+        } catch {
+          term.write(text);
+          return;
+        }
+        if (typeof msg?.i === "string") term.write(msg.i);
+        else if (Array.isArray(msg?.r)) term.resize(msg.r[0], msg.r[1]);
+      });
+      ws.on("close", () => term.detachView(client));
+    });
+    return;
+  }
   socket.destroy();
 });
 
