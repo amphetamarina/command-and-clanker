@@ -374,29 +374,23 @@ namespace OpenRA.Mods.Clanker.Traits
 			return (verb ?? "").ToUpperInvariant();
 		}
 
-		// Fires once when an agent's action completes: an explosion plus red
-		// "FAILED" on a non-zero exit, a green verb tag on success. Keyed on the
-		// (verb|path|ok) signature so it does not re-fire while the snapshot for
-		// that same action keeps arriving each tick.
+		// Fires once when an agent's action fails: an explosion plus red "FAILED"
+		// over the unit. Success is left silent -- the verb label already shows
+		// ongoing work, so a per-action success cue would only add noise. Keyed
+		// on the (verb|path|ok) signature so it does not re-fire while the
+		// snapshot for that same action keeps arriving each tick.
 		void FireActivityFx(World w, Actor unit, string id, FileActivity activity)
 		{
 			var sig = activity == null ? "" : $"{activity.Verb}|{activity.Path}|{activity.Ok}";
 			agentActivitySig.TryGetValue(id, out var prev);
 			agentActivitySig[id] = sig;
 
-			if (sig == "" || sig == prev || activity.Ok == null || !unit.IsInWorld)
+			if (sig == "" || sig == prev || activity.Ok != false || !unit.IsInWorld)
 				return;
 
 			var pos = unit.CenterPosition;
-			if (activity.Ok == false)
-			{
-				w.Add(new SpriteEffect(pos, w, "explosion", "building", "effect"));
-				w.Add(new FloatingText(pos, Color.Red, "FAILED", 25));
-			}
-			else
-			{
-				w.Add(new FloatingText(pos, Color.Lime, ActivityLabel(activity), 20));
-			}
+			w.Add(new SpriteEffect(pos, w, "explosion", "building", "effect"));
+			w.Add(new FloatingText(pos, Color.Red, "FAILED", 25));
 		}
 
 		// Places one civilian building per touched file inside the folder's file
