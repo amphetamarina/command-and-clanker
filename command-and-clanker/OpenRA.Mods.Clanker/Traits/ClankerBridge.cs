@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using OpenRA.Graphics;
 using OpenRA.Mods.Clanker.Protocol;
 using OpenRA.Mods.Common.Activities;
+using OpenRA.Mods.Common.Effects;
 using OpenRA.Mods.Common.Graphics;
 using OpenRA.Mods.Common.Traits;
 using OpenRA.Primitives;
@@ -93,6 +94,9 @@ namespace OpenRA.Mods.Clanker.Traits
 		readonly Dictionary<string, CPos> agentHome = new();
 		readonly Dictionary<string, CPos> agentTarget = new();
 		readonly Dictionary<string, ClankerLabel> agentLabels = new();
+		// Last (verb|path|ok) seen per agent, so a completed action fires its
+		// success/failure effect exactly once instead of on every snapshot tick.
+		readonly Dictionary<string, string> agentActivitySig = new();
 		readonly Dictionary<string, string> activeLinks = new();
 		IReadOnlyList<(WPos Start, WPos End, Color Color)> connectors = new List<(WPos, WPos, Color)>();
 
@@ -359,6 +363,42 @@ namespace OpenRA.Mods.Clanker.Traits
 			};
 		}
 
+		// The verb is the primary read on the unit's label (READ, EDIT, BUILD,
+		// DESTROY, FETCH, SPAWN, ...); fall back to the coarse direction.
+		static string ActivityLabel(FileActivity activity)
+		{
+			if (activity == null)
+				return "";
+
+			var verb = string.IsNullOrEmpty(activity.Verb) ? activity.Direction : activity.Verb;
+			return (verb ?? "").ToUpperInvariant();
+		}
+
+		// Fires once when an agent's action completes: an explosion plus red
+		// "FAILED" on a non-zero exit, a green verb tag on success. Keyed on the
+		// (verb|path|ok) signature so it does not re-fire while the snapshot for
+		// that same action keeps arriving each tick.
+		void FireActivityFx(World w, Actor unit, string id, FileActivity activity)
+		{
+			var sig = activity == null ? "" : $"{activity.Verb}|{activity.Path}|{activity.Ok}";
+			agentActivitySig.TryGetValue(id, out var prev);
+			agentActivitySig[id] = sig;
+
+			if (sig == "" || sig == prev || activity.Ok == null || !unit.IsInWorld)
+				return;
+
+			var pos = unit.CenterPosition;
+			if (activity.Ok == false)
+			{
+				w.Add(new SpriteEffect(pos, w, "explosion", "building", "effect"));
+				w.Add(new FloatingText(pos, Color.Red, "FAILED", 25));
+			}
+			else
+			{
+				w.Add(new FloatingText(pos, Color.Lime, ActivityLabel(activity), 20));
+			}
+		}
+
 		// Places one civilian building per touched file inside the folder's file
 		// strip (the variant is chosen by file extension), and removes buildings for
 		// files that are gone. A hashed slot with linear probing keeps each file put
@@ -560,8 +600,10 @@ namespace OpenRA.Mods.Clanker.Traits
 					agentTarget[snap.Id] = target;
 				}
 
+				FireActivityFx(w, unit, snap.Id, snap.Activity);
+
 				if (agentLabels.TryGetValue(snap.Id, out var label) && label != null)
-					label.Label = snap.Activity != null ? snap.Activity.Direction.ToUpperInvariant() : "";
+					label.Label = ActivityLabel(snap.Activity);
 			}
 
 			RemoveMissingAgents(live);
@@ -584,6 +626,7 @@ namespace OpenRA.Mods.Clanker.Traits
 				agentHome.Remove(id);
 				agentTarget.Remove(id);
 				agentLabels.Remove(id);
+				agentActivitySig.Remove(id);
 			}
 		}
 

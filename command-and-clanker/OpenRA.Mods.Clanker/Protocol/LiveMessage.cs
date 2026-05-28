@@ -48,6 +48,11 @@ namespace OpenRA.Mods.Clanker.Protocol
 		[JsonPropertyName("path")] public string Path { get; set; }
 		[JsonPropertyName("dir")] public string Dir { get; set; }
 		[JsonPropertyName("direction")] public string Direction { get; set; }
+		[JsonPropertyName("verb")] public string Verb { get; set; }
+
+		// Null until the action completes (PostToolUse) or when the backend
+		// could not read an exit status; true/false otherwise.
+		[JsonPropertyName("ok")] public bool? Ok { get; set; }
 	}
 
 	public class AgentSnapshot
