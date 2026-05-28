@@ -1,19 +1,29 @@
 clanker.terminal:
-	Inherits: FACT
-	RenderSprites:
-		Image: pdox
+	Inherits: PDOX
 	Buildable:
 		Queue: Building
 		BuildPaletteOrder: 5
-		# FACT is normally locked out of the palette by a ~disabled prerequisite;
-		# replace it with the always-available baseline (as POWR uses) so the
-		# Terminal builds like any other structure from the start.
+		# PDOX requires Allied tech and is capped at one; override so the Terminal
+		# is always available and uncapped.
 		Prerequisites: ~techlevel.infonly
+		BuildLimit: 0
 		Description: actor-clanker-terminal.description
 	Valued:
 		Cost: 100
 	Tooltip:
 		Name: actor-clanker-terminal.name
+	# PDOX draws -200 power and hosts the Chronosphere superweapon. Strip both
+	# so the Terminal is a plain building.
+	Power:
+		Amount: 0
+	-ChronoshiftPower@chronoshift:
+	-ChronoshiftPower@advancedchronoshift:
+	-SupportPowerChargeBar:
+	-InfiltrateForSupportPowerReset:
+	-ProvidesPrerequisite@germany:
+	-ProvidesPrerequisite@germanstructure:
+	-ProvidesPrerequisite@buildingname:
+	-MustBeDestroyed:
 	ClankerTerminalRef:
 	ClankerBuiltTerminal:
 
