@@ -100,7 +100,6 @@ Sequences:
 	ra|sequences/aircraft.yaml
 	ra|sequences/misc.yaml
 	ra|sequences/decorations.yaml
-	clanker|sequences/clanker.yaml
 
 TileSets:
 	ra|tilesets/snow.yaml

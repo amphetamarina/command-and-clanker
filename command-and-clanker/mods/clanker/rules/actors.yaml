@@ -1,7 +1,7 @@
 clanker.terminal:
 	Inherits: FACT
 	RenderSprites:
-		Image: clankerterminal
+		Image: pdox
 	Buildable:
 		Queue: Building
 		BuildPaletteOrder: 5
