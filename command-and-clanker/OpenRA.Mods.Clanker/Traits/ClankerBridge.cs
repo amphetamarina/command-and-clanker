@@ -649,8 +649,9 @@ namespace OpenRA.Mods.Clanker.Traits
 			}
 		}
 
-		// The placement slots in a folder's server-reserved file strip. Columns are
-		// stepped by two so the two-wide house sprites do not overlap.
+		// One slot per touched file, laid in a single row along the top of the
+		// strip and stepped three columns apart so the two-wide role buildings
+		// (which stand a full three rows tall) sit side by side with a gap.
 		List<CPos> FileSlotCells(World w, Region region)
 		{
 			var list = new List<CPos>();
@@ -658,37 +659,33 @@ namespace OpenRA.Mods.Clanker.Traits
 				return list;
 
 			var area = region.FileArea;
-			for (var row = 0; row < area.Rows; row++)
-				for (var col = 0; col < area.Cols; col += 2)
-				{
-					var (x, y) = coords.ToCell(area.X + col, area.Y + row);
-					var cell = new CPos(x, y);
-					if (w.Map.Contains(cell))
-						list.Add(cell);
-				}
+			for (var col = 0; col + 1 < area.Cols; col += 3)
+			{
+				var (x, y) = coords.ToCell(area.X + col, area.Y);
+				var cell = new CPos(x, y);
+				if (w.Map.Contains(cell))
+					list.Add(cell);
+			}
 
 			return list;
 		}
 
-		// Pick a building variant by the file's role, so files of the same kind
-		// share a silhouette (all tests alike, all configs alike) instead of
-		// varying by extension hash. Indices map into FileActors; build artifacts
-		// reuse the last variant. Richer, role-iconic buildings (barracks for
-		// tests, a refinery for a manifest) need a wider file strip and are
-		// tracked as a follow-up.
+		// Pick the building for a file by its role, so a folder's makeup reads
+		// from the skyline: a barracks for tests, a power plant for config, a
+		// tech center for a manifest, a radar dome for docs, a silo for build
+		// output, and a small house for ordinary source and everything else.
 		string FileActorForRole(string role)
 		{
-			var i = role switch
+			switch (role)
 			{
-				"source" => 0,
-				"test" => 1,
-				"config" => 2,
-				"manifest" => 3,
-				"docs" => 4,
-				"build" => 5,
-				_ => 6,
-			};
-			return info.FileActors[Math.Min(i, info.FileActors.Length - 1)];
+				case "test": return "clanker.file.test";
+				case "config": return "clanker.file.config";
+				case "manifest": return "clanker.file.manifest";
+				case "docs": return "clanker.file.docs";
+				case "build": return "clanker.file.build";
+				case "source": return info.FileActors[0];
+				default: return info.FileActors[Math.Min(1, info.FileActors.Length - 1)];
+			}
 		}
 
 		// Shown over a file's house while it is selected: basename and size.
