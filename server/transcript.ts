@@ -99,11 +99,13 @@ export function latestContextTokens(lines: string[]): number | null {
   return last;
 }
 
-// Only tools that map to a place on the map produce activity: file tools (they
-// carry a file_path) and Bash (it runs in a cwd). Search/fetch/spawn tools have
-// no folder to drive to yet and are skipped (see AMP-176/177).
+// Tools placed on the map: file tools (a file_path), and tools that act in the
+// session's cwd -- Bash, search (Grep/Glob), and external fetch (WebFetch/
+// WebSearch). Their verb drives the on-map machine; fetch is anchored at cwd
+// but its aircraft flies to the terminal regardless.
+const CWD_TOOLS = new Set(["Bash", "Grep", "Glob", "WebFetch", "WebSearch"]);
 function placeable(use: RawUse): boolean {
-  return typeof use.input.file_path === "string" || use.name === "Bash";
+  return typeof use.input.file_path === "string" || CWD_TOOLS.has(use.name);
 }
 
 export function useToActivity(use: RawUse, ok: boolean | null): TranscriptActivity {

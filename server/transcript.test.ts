@@ -139,9 +139,23 @@ test("ingestLines drops a result with no matching pending use", () => {
   expect(out).toEqual([]);
 });
 
-test("ingestLines skips tools with no folder to place (search/fetch)", () => {
-  const out = ingestLines(
+test("ingestLines maps search and fetch tools to cwd-anchored activities", () => {
+  const search = ingestLines(
     [asstUse("g", "Grep", { pattern: "foo" }), userResult("g", false)],
+    new Map(),
+  );
+  expect(search[0]).toMatchObject({ tool: "Grep", verb: "search", cwd: "/p" });
+
+  const fetch = ingestLines(
+    [asstUse("f", "WebFetch", { url: "https://x" }), userResult("f", false)],
+    new Map(),
+  );
+  expect(fetch[0]).toMatchObject({ tool: "WebFetch", verb: "fetch", cwd: "/p" });
+});
+
+test("ingestLines still skips a tool with neither a file nor a cwd anchor", () => {
+  const out = ingestLines(
+    [asstUse("t", "TodoWrite", { todos: [] }), userResult("t", false)],
     new Map(),
   );
   expect(out).toEqual([]);
