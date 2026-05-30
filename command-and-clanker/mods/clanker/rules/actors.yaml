@@ -22,7 +22,6 @@ clanker.terminal:
 	Power:
 		Amount: 0
 	-ChronoshiftPower@chronoshift:
-	-ChronoshiftPower@advancedchronoshift:
 	-SupportPowerChargeBar:
 	-InfiltrateForSupportPowerReset:
 	-ProvidesPrerequisite@germany:
