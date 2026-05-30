@@ -54,6 +54,10 @@ clanker.agent:
 	Inherits: JEEP
 	RenderSprites:
 		Image: jeep
+	# Agents cross the whole map to the folder they touch; crank the speed so
+	# the unit keeps up with the agent instead of crawling (Ranger is only 40).
+	Mobile:
+		Speed: 170
 	ClankerLabel:
 		Position: Top
 		ValidRelationships: Ally, Neutral, Enemy
@@ -63,6 +67,8 @@ clanker.agent.opencode:
 	Inherits: APC
 	RenderSprites:
 		Image: apc
+	Mobile:
+		Speed: 170
 	ClankerLabel:
 		Position: Top
 		ValidRelationships: Ally, Neutral, Enemy
@@ -72,6 +78,8 @@ clanker.agent.codex:
 	Inherits: ARTY
 	RenderSprites:
 		Image: arty
+	Mobile:
+		Speed: 170
 	ClankerLabel:
 		Position: Top
 		ValidRelationships: Ally, Neutral, Enemy
@@ -81,6 +89,8 @@ clanker.agent.hermes:
 	Inherits: FTRK
 	RenderSprites:
 		Image: ftrk
+	Mobile:
+		Speed: 170
 	ClankerLabel:
 		Position: Top
 		ValidRelationships: Ally, Neutral, Enemy
@@ -90,6 +100,8 @@ clanker.subagent:
 	Inherits: E1
 	RenderSprites:
 		Image: e1
+	Mobile:
+		Speed: 120
 	ClankerLabel:
 		Position: Top
 		ValidRelationships: Ally, Neutral, Enemy
