@@ -50,6 +50,7 @@ export function parseTranscriptLine(line: string): {
   uses: RawUse[];
   results: RawResult[];
   contextTokens: number | null;
+  text: string | null;
 } {
   const uses: RawUse[] = [];
   const results: RawResult[] = [];
@@ -57,18 +58,19 @@ export function parseTranscriptLine(line: string): {
   try {
     entry = JSON.parse(line) as Record<string, unknown>;
   } catch {
-    return { uses, results, contextTokens: null };
+    return { uses, results, contextTokens: null, text: null };
   }
   const message = entry.message as { content?: unknown; usage?: unknown } | undefined;
   const contextTokens = usageContextTokens(message?.usage);
   const content = message?.content;
-  if (!Array.isArray(content)) return { uses, results, contextTokens };
+  if (!Array.isArray(content)) return { uses, results, contextTokens, text: null };
 
   const cwd = asString(entry.cwd);
   const tsStr = asString(entry.timestamp);
   const ts = tsStr ? Date.parse(tsStr) || 0 : 0;
   const isSidechain = entry.isSidechain === true;
 
+  const texts: string[] = [];
   for (const item of content) {
     if (!item || typeof item !== "object") continue;
     const it = item as Record<string, unknown>;
@@ -83,9 +85,12 @@ export function parseTranscriptLine(line: string): {
       });
     } else if (it.type === "tool_result" && typeof it.tool_use_id === "string") {
       results.push({ id: it.tool_use_id, isError: it.is_error === true });
+    } else if (it.type === "text" && typeof it.text === "string") {
+      texts.push(it.text);
     }
   }
-  return { uses, results, contextTokens };
+  const text = texts.length > 0 ? texts.join(" ").replace(/\s+/g, " ").trim() || null : null;
+  return { uses, results, contextTokens, text };
 }
 
 // The most recent context size across a batch of lines, or null if none of them
@@ -95,6 +100,17 @@ export function latestContextTokens(lines: string[]): number | null {
   for (const line of lines) {
     const { contextTokens } = parseTranscriptLine(line);
     if (contextTokens !== null) last = contextTokens;
+  }
+  return last;
+}
+
+// The most recent assistant prose across a batch of lines (what the agent last
+// said), or null if none carried text.
+export function latestMessage(lines: string[]): string | null {
+  let last: string | null = null;
+  for (const line of lines) {
+    const { text } = parseTranscriptLine(line);
+    if (text) last = text;
   }
   return last;
 }
@@ -160,6 +176,8 @@ export class TranscriptTailer {
   // The latest assistant-turn context size seen, kept across reads so a tick
   // that appends no usage line still reports the last known value.
   contextTokens: number | null = null;
+  // The latest assistant prose seen (what the agent last said), kept similarly.
+  lastMessage: string | null = null;
 
   constructor(path: string) {
     this.path = path;
@@ -209,6 +227,8 @@ export class TranscriptTailer {
     const lines = complete.split("\n").filter((l) => l.length > 0);
     const ctx = latestContextTokens(lines);
     if (ctx !== null) this.contextTokens = ctx;
+    const msg = latestMessage(lines);
+    if (msg !== null) this.lastMessage = msg;
     return ingestLines(lines, this.pending);
   }
 }

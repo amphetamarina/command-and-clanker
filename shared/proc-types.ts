@@ -48,6 +48,8 @@ export type AgentSnapshot = {
   // How full the agent's context window is (0..1), from transcript usage, or
   // null when unknown. Drives the base "brownout" as the agent fills up.
   contextFraction: number | null;
+  // The agent's most recent prose (what it last said), shown over its terminal.
+  lastMessage: string | null;
 };
 
 // A file an agent has touched, shown as an icon on its folder island.

@@ -67,6 +67,7 @@ type Agent = {
   activityTs: number;
   recent: string[];
   contextFraction: number | null;
+  lastMessage: string | null;
 };
 const agents = new Map<string, Agent>();
 
@@ -93,6 +94,7 @@ function ensureAgent(session: string, tool: string): Agent {
       activityTs: 0,
       recent: [],
       contextFraction: null,
+      lastMessage: null,
     };
     agents.set(session, a);
   }
@@ -119,6 +121,7 @@ function ensureSubagent(
       activityTs: 0,
       recent: [],
       contextFraction: null,
+      lastMessage: null,
     };
     agents.set(id, a);
   }
@@ -173,17 +176,25 @@ function isTrackedFile(path: string): boolean {
 }
 
 
-function registerTranscript(session: string, path: unknown): void {
+function registerTranscript(key: string, path: unknown): void {
   if (typeof path !== "string" || !path) return;
-  const existing = tailers.get(session);
+  const existing = tailers.get(key);
   if (existing && existing.path === path) return;
-  tailers.set(session, { path, tailer: new TranscriptTailer(path) });
+  tailers.set(key, { path, tailer: new TranscriptTailer(path) });
 }
 
-// Apply one transcript-derived activity to the session's agent: drive it to the
-// folder, record the file, and (once the outcome is known) log the action.
-function applyActivity(session: string, act: TranscriptActivity, now: number): void {
-  const agent = ensureAgent(session, sessionTool.get(session) ?? "claude");
+// A subagent's transcript lives beside the main one, under <session>/subagents.
+// Prefer the path the hook hands us; otherwise derive it from the main path.
+function subagentTranscriptPath(body: ClaudeHook): string | null {
+  if (typeof body.agent_transcript_path === "string") return body.agent_transcript_path;
+  const main = body.transcript_path;
+  if (typeof main !== "string" || !main.endsWith(".jsonl") || !body.agent_id) return null;
+  return `${main.slice(0, -".jsonl".length)}/subagents/agent-${String(body.agent_id)}.jsonl`;
+}
+
+// Apply one transcript-derived activity to an agent: drive it to the folder,
+// record the file, and (once the outcome is known) log the action.
+function applyActivity(agent: Agent, act: TranscriptActivity, now: number): void {
   const dir = act.filePath ? dirname(act.filePath) : act.cwd;
   if (!dir || !dir.startsWith("/")) return;
 
@@ -216,19 +227,23 @@ function contextWindowFor(model: string | undefined): number {
   return 200_000;
 }
 
-// Drain a session's transcript tailer, applying any newly appended activity and
-// refreshing the agent's context fill from the latest usage seen.
-function pumpTranscript(session: string): void {
-  const entry = tailers.get(session);
-  if (!entry) return;
+// Drain one agent's transcript tailer (main session or subagent), applying any
+// newly appended activity and refreshing its context fill and last message.
+function pumpTranscript(agentId: string): void {
+  const entry = tailers.get(agentId);
+  const agent = agents.get(agentId);
+  if (!entry || !agent) return;
   const now = Date.now();
-  for (const act of entry.tailer.readNew()) applyActivity(session, act, now);
+  for (const act of entry.tailer.readNew()) applyActivity(agent, act, now);
 
-  const tokens = entry.tailer.contextTokens;
-  const agent = agents.get(session);
-  if (agent && tokens !== null) {
-    agent.contextFraction = Math.min(1, tokens / contextWindowFor(sessionModel.get(session)));
+  // Context fill drives the base brownout, which is the main agent's terminal.
+  if (agent.kind === "agent" && entry.tailer.contextTokens !== null) {
+    agent.contextFraction = Math.min(
+      1,
+      entry.tailer.contextTokens / contextWindowFor(sessionModel.get(agent.terminal)),
+    );
   }
+  if (entry.tailer.lastMessage !== null) agent.lastMessage = entry.tailer.lastMessage;
 }
 
 function ingest(session: string, tool: string, body: ClaudeHook): void {
@@ -242,27 +257,42 @@ function ingest(session: string, tool: string, body: ClaudeHook): void {
     case "SessionEnd":
     case "Stop":
       removeSession(session);
-      tailers.delete(session);
+      for (const key of [...tailers.keys()]) {
+        if (key === session || key.startsWith(`${session}:sub:`)) tailers.delete(key);
+      }
       sessionTool.delete(session);
       sessionModel.delete(session);
       worldDirty = true;
       return;
-    case "SubagentStart":
+    case "SubagentStart": {
       ensureSubagent(
         session,
         body.agent_id,
         tool,
         typeof body.agent_type === "string" ? body.agent_type : "subagent",
       );
+      // Tail the subagent's own transcript so its tool calls show on the map.
+      registerTranscript(subId(session, body.agent_id), subagentTranscriptPath(body));
       return;
-    case "SubagentStop":
-      agents.delete(subId(session, body.agent_id));
+    }
+    case "SubagentStop": {
+      const id = subId(session, body.agent_id);
+      pumpTranscript(id);
+      agents.delete(id);
+      tailers.delete(id);
       return;
+    }
     case "PreToolUse":
     case "PostToolUse":
       // The activity itself comes from the transcript, not this payload; the
-      // hook is only a poke to read whatever lines have just landed.
-      pumpTranscript(session);
+      // hook is only a poke to read whatever lines have just landed. Pump the
+      // subagent's transcript when the call came from one, else the main agent.
+      if (body.agent_id) {
+        pumpTranscript(subId(session, body.agent_id));
+      } else {
+        ensureAgent(session, tool);
+        pumpTranscript(session);
+      }
       return;
     default:
       return;
@@ -301,6 +331,7 @@ function agentSnapshots(): AgentSnapshot[] {
     activity: a.activity,
     recent: a.recent,
     contextFraction: a.contextFraction,
+    lastMessage: a.lastMessage,
   }));
 }
 
@@ -619,7 +650,9 @@ setInterval(() => {
     if (!liveTerms.has(id)) {
       knownTerminals.delete(id);
       removeSession(id);
-      tailers.delete(id);
+      for (const key of [...tailers.keys()]) {
+        if (key === id || key.startsWith(`${id}:sub:`)) tailers.delete(key);
+      }
       sessionTool.delete(id);
       sessionModel.delete(id);
       releaseRegion(placements, id);

@@ -3,6 +3,7 @@ import {
   parseTranscriptLine,
   ingestLines,
   latestContextTokens,
+  latestMessage,
   type RawUse,
 } from "./transcript.ts";
 
@@ -44,10 +45,37 @@ test("parseTranscriptLine extracts a tool_result from a user entry", () => {
 });
 
 test("parseTranscriptLine ignores non-message and malformed lines", () => {
-  const empty = { uses: [], results: [], contextTokens: null };
+  const empty = { uses: [], results: [], contextTokens: null, text: null };
   expect(parseTranscriptLine('{"type":"file-history-snapshot"}')).toEqual(empty);
   expect(parseTranscriptLine("not json")).toEqual(empty);
   expect(parseTranscriptLine("")).toEqual(empty);
+});
+
+test("parseTranscriptLine extracts and collapses assistant text", () => {
+  const line = JSON.stringify({
+    type: "assistant",
+    message: {
+      role: "assistant",
+      content: [
+        { type: "text", text: "Let me check\n  the config" },
+        { type: "tool_use", id: "u", name: "Read", input: { file_path: "/p/x" } },
+      ],
+    },
+  });
+  const parsed = parseTranscriptLine(line);
+  expect(parsed.text).toBe("Let me check the config");
+  expect(parsed.uses).toHaveLength(1);
+});
+
+test("latestMessage returns the last assistant prose seen", () => {
+  const say = (t: string) =>
+    JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: t }] } });
+  const toolOnly = JSON.stringify({
+    type: "assistant",
+    message: { content: [{ type: "tool_use", id: "u", name: "Read", input: {} }] },
+  });
+  expect(latestMessage([say("first"), toolOnly, say("second")])).toBe("second");
+  expect(latestMessage([toolOnly])).toBe(null);
 });
 
 test("parseTranscriptLine sums context tokens from an assistant usage block", () => {
