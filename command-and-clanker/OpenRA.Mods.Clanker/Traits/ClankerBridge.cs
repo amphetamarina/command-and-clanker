@@ -780,7 +780,10 @@ namespace OpenRA.Mods.Clanker.Traits
 
 				if (agentTarget[snap.Id] != target)
 				{
-					unit.QueueActivity(false, new Move(unit, target));
+					// IMove works for both the ground agents (Mobile) and the
+					// helicopter agent (Aircraft); the latter flies over folder
+					// walls and hovers at the target.
+					unit.QueueActivity(false, unit.Trait<IMove>().MoveTo(target, 1));
 					agentTarget[snap.Id] = target;
 				}
 

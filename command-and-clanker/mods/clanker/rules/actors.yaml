@@ -51,12 +51,17 @@ clanker.folderwall:
 		Color: FFFFAA
 
 clanker.agent:
-	Inherits: JEEP
+	Inherits: HELI
 	RenderSprites:
-		Image: jeep
-	# Agents cross the whole map to the folder they touch; crank the speed so
-	# the unit keeps up with the agent instead of crawling (Ranger is only 40).
-	Mobile:
+		Image: heli
+	# The agent flies (fast, and straight over folder walls) and hovers where it
+	# is working. It stays Neutral with HoldFire stance and is never given an
+	# attack order, and its ammo never depletes (it never fires), so it neither
+	# fights nor flies off to a helipad to rearm; a helicopter's idle behaviour
+	# is to hover in place. Only Buildable is dropped (its prerequisites do not
+	# exist in this mod, and the bridge spawns the agent directly).
+	-Buildable:
+	Aircraft:
 		Speed: 170
 	ClankerLabel:
 		Position: Top
