@@ -416,10 +416,11 @@ namespace OpenRA.Mods.Clanker.Traits
 			return (verb ?? "").ToUpperInvariant();
 		}
 
-		// Paints a "ctx NN%" readout over the terminal that reddens as the agent's
-		// context window fills (green -> amber -> red), so the base visibly browns
-		// out as it runs low on headroom. Cleared when the fill is unknown.
-		void UpdateContextReadout(string terminal, double? fraction)
+		// Paints the agent's latest message over its terminal, coloured by how full
+		// its context window is (green -> amber -> red) so the base browns out as
+		// it fills. Falls back to a "ctx NN%" readout when the agent has not yet
+		// spoken, and clears when nothing is known.
+		void UpdateTerminalLabel(string terminal, double? fraction, string message)
 		{
 			if (!islands.TryGetValue(terminal, out var island) || !island.IsInWorld)
 				return;
@@ -428,18 +429,25 @@ namespace OpenRA.Mods.Clanker.Traits
 			if (label == null)
 				return;
 
-			if (fraction == null)
-			{
-				label.Label = "";
-				label.LabelColor = null;
-				return;
-			}
-
-			var pct = (int)Math.Round(Math.Clamp(fraction.Value, 0, 1) * 100);
-			label.Label = $"ctx {pct}%";
-			label.LabelColor = fraction.Value >= 0.85 ? Color.Red
+			var color = fraction == null ? (Color?)null
+				: fraction.Value >= 0.85 ? Color.Red
 				: fraction.Value >= 0.6 ? Color.Yellow
 				: Color.Lime;
+
+			if (!string.IsNullOrEmpty(message))
+				label.Label = Shorten(message, 56);
+			else if (fraction != null)
+				label.Label = $"ctx {(int)Math.Round(Math.Clamp(fraction.Value, 0, 1) * 100)}%";
+			else
+				label.Label = "";
+
+			label.LabelColor = color;
+		}
+
+		static string Shorten(string s, int max)
+		{
+			s = s.Trim();
+			return s.Length <= max ? s : s[..(max - 3)] + "...";
 		}
 
 		// Drives the per-action effects, keyed on the action identity (verb|path)
@@ -731,7 +739,7 @@ namespace OpenRA.Mods.Clanker.Traits
 					{
 						termRef.Recent = snap.Recent ?? new List<string>();
 						termRef.Activity = DescribeActivity(snap.Activity);
-						UpdateContextReadout(snap.Terminal, snap.ContextFraction);
+						UpdateTerminalLabel(snap.Terminal, snap.ContextFraction, snap.LastMessage);
 					}
 
 					if (snap.Activity != null && folderRegions.ContainsKey(snap.Activity.Dir))

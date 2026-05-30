@@ -67,6 +67,7 @@ namespace OpenRA.Mods.Clanker.Protocol
 		[JsonPropertyName("activity")] public FileActivity Activity { get; set; }
 		[JsonPropertyName("recent")] public List<string> Recent { get; set; }
 		[JsonPropertyName("contextFraction")] public double? ContextFraction { get; set; }
+		[JsonPropertyName("lastMessage")] public string LastMessage { get; set; }
 
 		public bool IsSubagent => Kind == "subagent";
 	}
